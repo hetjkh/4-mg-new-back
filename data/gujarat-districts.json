@@ -1,0 +1,387 @@
+{
+  "state": "Gujarat",
+  "districts": [
+    {
+      "districtCode": "01",
+      "districtName": "Kachchh",
+      "talukas": [
+        "Lakhpat",
+        "Rapar",
+        "Bhachau",
+        "Anjar",
+        "Bhuj",
+        "Nakhatrana",
+        "Abdasa",
+        "Mandvi",
+        "Mundra",
+        "Gandhidham"
+      ]
+    },
+    {
+      "districtCode": "02",
+      "districtName": "Banaskantha",
+      "talukas": [
+        "Vav",
+        "Tharad",
+        "Dhanera",
+        "Dantiwada",
+        "Amirgadh",
+        "Danta",
+        "Vadgam",
+        "Palanpur",
+        "Deesa",
+        "Deodar",
+        "Bhabhar",
+        "Kankrej"
+      ]
+    },
+    {
+      "districtCode": "03",
+      "districtName": "Patan",
+      "talukas": [
+        "Santalpur",
+        "Radhanpur",
+        "Sidhpur",
+        "Patan",
+        "Harij",
+        "Sami",
+        "Chanasma"
+      ]
+    },
+    {
+      "districtCode": "04",
+      "districtName": "Mehsana",
+      "talukas": [
+        "Satlasana",
+        "Kheralu",
+        "Unjha",
+        "Visnagar",
+        "Vadnagar",
+        "Vijapur",
+        "Mehsana",
+        "Becharaji",
+        "Kadi"
+      ]
+    },
+    {
+      "districtCode": "05",
+      "districtName": "Sabarkantha",
+      "talukas": [
+        "Khedbrahma",
+        "Vijaynagar",
+        "Vadali",
+        "Idar",
+        "Bhiloda",
+        "Meghraj",
+        "Himatnagar",
+        "Prantij",
+        "Talod",
+        "Modasa",
+        "Dhansura",
+        "Malpur",
+        "Bayad"
+      ]
+    },
+    {
+      "districtCode": "06",
+      "districtName": "Gandhinagar",
+      "talukas": [
+        "Kalol",
+        "Mansa",
+        "Gandhinagar",
+        "Dehgam"
+      ]
+    },
+    {
+      "districtCode": "07",
+      "districtName": "Ahmedabad",
+      "talukas": [
+        "Mandal",
+        "Detroj-Rampura",
+        "Viramgam",
+        "Sanand",
+        "Ahmedabad City",
+        "Daskroi",
+        "Dholka",
+        "Bavla",
+        "Ranpur",
+        "Barwala",
+        "Dhandhuka"
+      ]
+    },
+    {
+      "districtCode": "08",
+      "districtName": "Surendranagar",
+      "talukas": [
+        "Halvad",
+        "Dhrangadhra",
+        "Dasada",
+        "Lakhtar",
+        "Wadhwan",
+        "Muli",
+        "Chotila",
+        "Sayla",
+        "Chuda",
+        "Limbdi"
+      ]
+    },
+    {
+      "districtCode": "09",
+      "districtName": "Rajkot",
+      "talukas": [
+        "Maliya",
+        "Morbi",
+        "Tankara",
+        "Wankaner",
+        "Paddhari",
+        "Rajkot",
+        "Lodhika",
+        "Kotda Sangani",
+        "Jasdan",
+        "Gondal",
+        "Jamkandorna",
+        "Upleta",
+        "Dhoraji",
+        "Jetpur"
+      ]
+    },
+    {
+      "districtCode": "10",
+      "districtName": "Jamnagar",
+      "talukas": [
+        "Okhamandal",
+        "Khambhalia",
+        "Jamnagar",
+        "Jodiya",
+        "Dhrol",
+        "Kalavad",
+        "Lalpur",
+        "Kalyanpur",
+        "Bhanvad",
+        "Jamjodhpur"
+      ]
+    },
+    {
+      "districtCode": "11",
+      "districtName": "Porbandar",
+      "talukas": [
+        "Porbandar",
+        "Ranavav",
+        "Kutiyana"
+      ]
+    },
+    {
+      "districtCode": "12",
+      "districtName": "Junagadh",
+      "talukas": [
+        "Manavadar",
+        "Vanthali",
+        "Junagadh",
+        "Bhesan",
+        "Visavadar",
+        "Mendarda",
+        "Keshod",
+        "Mangrol",
+        "Malia",
+        "Talala",
+        "Patan-Veraval",
+        "Sutrapada",
+        "Kodinar",
+        "Una"
+      ]
+    },
+    {
+      "districtCode": "13",
+      "districtName": "Amreli",
+      "talukas": [
+        "Kunkavav Vadia",
+        "Babra",
+        "Lathi",
+        "Lilia",
+        "Amreli",
+        "Bagasara",
+        "Dhari",
+        "Savarkundla",
+        "Khambha",
+        "Jafrabad",
+        "Rajula"
+      ]
+    },
+    {
+      "districtCode": "14",
+      "districtName": "Bhavnagar",
+      "talukas": [
+        "Botad",
+        "Vallabhipur",
+        "Gadhada",
+        "Umrala",
+        "Bhavnagar",
+        "Ghogha",
+        "Sihor",
+        "Gariadhar",
+        "Palitana",
+        "Talaja",
+        "Mahuva"
+      ]
+    },
+    {
+      "districtCode": "15",
+      "districtName": "Anand",
+      "talukas": [
+        "Tarapur",
+        "Sojitra",
+        "Umreth",
+        "Anand",
+        "Petlad",
+        "Khambhat",
+        "Borsad",
+        "Anklav"
+      ]
+    },
+    {
+      "districtCode": "16",
+      "districtName": "Kheda",
+      "talukas": [
+        "Kapadvanj",
+        "Virpur",
+        "Balasinor",
+        "Kathlal",
+        "Mehmedabad",
+        "Kheda",
+        "Matar",
+        "Nadiad",
+        "Mahudha",
+        "Thasra"
+      ]
+    },
+    {
+      "districtCode": "17",
+      "districtName": "Panchmahal",
+      "talukas": [
+        "Khanpur",
+        "Kadana",
+        "Santrampur",
+        "Lunawada",
+        "Shehera",
+        "Morwa (Hadaf)",
+        "Godhra",
+        "Kalol",
+        "Ghoghamba",
+        "Halol",
+        "Jambughoda"
+      ]
+    },
+    {
+      "districtCode": "18",
+      "districtName": "Dohad",
+      "talukas": [
+        "Fatepura",
+        "Jhalod",
+        "Limkheda",
+        "Dohad",
+        "Garbada",
+        "Devgadbaria",
+        "Dhanpur"
+      ]
+    },
+    {
+      "districtCode": "19",
+      "districtName": "Vadodara",
+      "talukas": [
+        "Savli",
+        "Vadodara",
+        "Vaghodia",
+        "Jetpur Pavi",
+        "Chhota Udaipur",
+        "Kavant",
+        "Nasvadi",
+        "Sankheda",
+        "Dabhoi",
+        "Padra",
+        "Karjan",
+        "Sinor"
+      ]
+    },
+    {
+      "districtCode": "20",
+      "districtName": "Narmada",
+      "talukas": [
+        "Tilakwada",
+        "Nandod",
+        "Dediapada",
+        "Sagbara"
+      ]
+    },
+    {
+      "districtCode": "21",
+      "districtName": "Bharuch",
+      "talukas": [
+        "Jambusar",
+        "Amod",
+        "Vagra",
+        "Bharuch",
+        "Jhagadia",
+        "Ankleshwar",
+        "Hansot",
+        "Valia"
+      ]
+    },
+    {
+      "districtCode": "22",
+      "districtName": "The Dangs",
+      "talukas": [
+        "The Dangs"
+      ]
+    },
+    {
+      "districtCode": "23",
+      "districtName": "Navsari",
+      "talukas": [
+        "Navsari",
+        "Jalalpore",
+        "Gandevi",
+        "Chikhli",
+        "Bansda"
+      ]
+    },
+    {
+      "districtCode": "24",
+      "districtName": "Valsad",
+      "talukas": [
+        "Valsad",
+        "Dharampur",
+        "Pardi",
+        "Kaprada",
+        "Umbergaon"
+      ]
+    },
+    {
+      "districtCode": "25",
+      "districtName": "Surat",
+      "talukas": [
+        "Olpad",
+        "Mangrol",
+        "Umarpada",
+        "Mandvi",
+        "Kamrej",
+        "Surat City",
+        "Chorasi",
+        "Palsana",
+        "Bardoli",
+        "Mahuva"
+      ]
+    },
+    {
+      "districtCode": "26",
+      "districtName": "Tapi",
+      "talukas": [
+        "Nizar",
+        "Uchchhal",
+        "Songadh",
+        "Vyara",
+        "Valod"
+      ]
+    }
+  ]
+}
+

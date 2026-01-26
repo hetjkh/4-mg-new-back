@@ -1,0 +1,34 @@
+{
+  "product": {
+    "created": "Product created successfully",
+    "updated": "Product updated successfully",
+    "deleted": "Product deleted successfully",
+    "notFound": "Product not found",
+    "fetchError": "Server error while fetching products",
+    "fetchSingleError": "Server error while fetching product",
+    "createError": "Server error during product creation",
+    "updateError": "Server error during product update",
+    "deleteError": "Server error during product deletion",
+    "titleRequired": "Please provide title, packetPrice, packetsPerStrip, image, and stock",
+    "priceInvalid": "Packet price must be a positive number",
+    "packetsInvalid": "Packets per strip must be at least 1",
+    "stockInvalid": "Stock must be a positive number (in strips)"
+  },
+  "auth": {
+    "loginSuccess": "Login successful",
+    "loginFailed": "Invalid email or password",
+    "roleMismatch": "Role does not match your account",
+    "registrationSuccess": "User registered successfully",
+    "registrationFailed": "Registration failed",
+    "tokenInvalid": "Invalid or expired token",
+    "tokenMissing": "No token provided",
+    "accessDenied": "Access denied. Admin privileges required.",
+    "userNotFound": "User not found"
+  },
+  "common": {
+    "serverError": "Server error",
+    "validationError": "Validation error",
+    "missingFields": "Please provide all required fields"
+  }
+}
+

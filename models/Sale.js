@@ -1,0 +1,137 @@
+const mongoose = require('mongoose');
+
+const saleSchema = new mongoose.Schema({
+  salesman: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+    comment: 'Salesman who made the sale',
+  },
+  dealer: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+    comment: 'Dealer who owns this salesman',
+  },
+  product: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Product',
+    required: true,
+    comment: 'Product sold',
+  },
+  stockAllocation: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'StockAllocation',
+    default: null,
+    comment: 'Reference to stock allocation if sale is from allocated stock',
+  },
+  quantity: {
+    type: Number,
+    required: true,
+    min: [1, 'Quantity must be at least 1'],
+    comment: 'Number of packets sold',
+  },
+  strips: {
+    type: Number,
+    required: true,
+    min: [0, 'Strips cannot be negative'],
+    comment: 'Number of strips sold (calculated from quantity)',
+  },
+  unitPrice: {
+    type: Number,
+    required: true,
+    min: [0, 'Unit price cannot be negative'],
+    comment: 'Price per packet',
+  },
+  totalAmount: {
+    type: Number,
+    required: true,
+    min: [0, 'Total amount cannot be negative'],
+    comment: 'Total sale amount (quantity * unitPrice)',
+  },
+  customerName: {
+    type: String,
+    trim: true,
+    default: '',
+    comment: 'Customer name (optional)',
+  },
+  customerPhone: {
+    type: String,
+    trim: true,
+    default: '',
+    comment: 'Customer phone number (optional)',
+  },
+  location: {
+    district: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    taluka: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    village: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+  },
+  saleDate: {
+    type: Date,
+    default: Date.now,
+    required: true,
+    comment: 'Date of sale',
+  },
+  paymentMethod: {
+    type: String,
+    enum: ['cash', 'upi', 'bank_transfer', 'credit', 'other'],
+    default: 'cash',
+    comment: 'Payment method used',
+  },
+  paymentStatus: {
+    type: String,
+    enum: ['pending', 'completed', 'partial'],
+    default: 'completed',
+    comment: 'Payment status',
+  },
+  notes: {
+    type: String,
+    trim: true,
+    default: '',
+    comment: 'Additional notes about the sale',
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    comment: 'User who created this sale record',
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
+
+// Indexes for better query performance
+saleSchema.index({ salesman: 1, saleDate: -1 });
+saleSchema.index({ dealer: 1, saleDate: -1 });
+saleSchema.index({ product: 1 });
+saleSchema.index({ saleDate: -1 });
+saleSchema.index({ paymentStatus: 1 });
+
+// Update updatedAt before saving
+saleSchema.pre('save', function(next) {
+  this.updatedAt = Date.now();
+  next();
+});
+
+module.exports = mongoose.model('Sale', saleSchema);
+

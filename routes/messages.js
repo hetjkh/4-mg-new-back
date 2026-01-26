@@ -69,7 +69,38 @@ const verifyAdmin = (req, res, next) => {
 router.post('/', verifyToken, verifyAdmin, upload.single('image'), async (req, res) => {
   try {
     const language = getLanguage(req);
-    const { title, content, recipientRoles, recipients, sendToAll } = req.body;
+    let { title, content, recipientRoles, recipients, sendToAll } = req.body;
+
+    // Debug logging
+    console.log('Received body:', { title, content, recipientRoles, recipients, sendToAll });
+    console.log('recipientRoles type:', typeof recipientRoles);
+    console.log('recipientRoles value:', recipientRoles);
+
+    // Parse JSON strings if they come from FormData
+    if (typeof recipientRoles === 'string') {
+      try {
+        recipientRoles = JSON.parse(recipientRoles);
+        console.log('Parsed recipientRoles:', recipientRoles);
+      } catch (e) {
+        console.log('JSON parse failed, trying comma split');
+        // If parsing fails, try splitting by comma
+        recipientRoles = recipientRoles.split(',').map(r => r.trim()).filter(r => r);
+        console.log('Comma split recipientRoles:', recipientRoles);
+      }
+    }
+
+    if (typeof recipients === 'string' && recipients) {
+      try {
+        recipients = JSON.parse(recipients);
+      } catch (e) {
+        recipients = recipients.split(',').map(r => r.trim()).filter(r => r);
+      }
+    }
+
+    // Convert sendToAll to boolean if it's a string
+    if (typeof sendToAll === 'string') {
+      sendToAll = sendToAll === 'true' || sendToAll === '1';
+    }
 
     // Validate required fields
     if (!title || !content) {
@@ -79,7 +110,25 @@ router.post('/', verifyToken, verifyAdmin, upload.single('image'), async (req, r
       });
     }
 
-    if (!recipientRoles || !Array.isArray(recipientRoles) || recipientRoles.length === 0) {
+    // Final validation after parsing
+    if (!recipientRoles) {
+      console.error('recipientRoles is missing or null');
+      return res.status(400).json({
+        success: false,
+        message: translateMessage(language, 'messages.recipientRolesRequired', 'At least one recipient role is required'),
+      });
+    }
+
+    if (!Array.isArray(recipientRoles)) {
+      console.error('recipientRoles is not an array:', recipientRoles, typeof recipientRoles);
+      return res.status(400).json({
+        success: false,
+        message: translateMessage(language, 'messages.recipientRolesRequired', 'At least one recipient role is required'),
+      });
+    }
+
+    if (recipientRoles.length === 0) {
+      console.error('recipientRoles array is empty');
       return res.status(400).json({
         success: false,
         message: translateMessage(language, 'messages.recipientRolesRequired', 'At least one recipient role is required'),
@@ -116,8 +165,17 @@ router.post('/', verifyToken, verifyAdmin, upload.single('image'), async (req, r
 
     // Parse recipients if provided
     let recipientIds = [];
-    if (!sendToAll && recipients && Array.isArray(recipients) && recipients.length > 0) {
-      recipientIds = recipients.map(id => id.trim()).filter(id => id);
+    if (!sendToAll && recipients) {
+      if (Array.isArray(recipients)) {
+        recipientIds = recipients.map(id => String(id).trim()).filter(id => id);
+      } else if (typeof recipients === 'string') {
+        try {
+          const parsed = JSON.parse(recipients);
+          recipientIds = Array.isArray(parsed) ? parsed.map(id => String(id).trim()).filter(id => id) : [];
+        } catch (e) {
+          recipientIds = recipients.split(',').map(id => id.trim()).filter(id => id);
+        }
+      }
     }
 
     // Create message

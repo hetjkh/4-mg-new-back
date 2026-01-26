@@ -75,14 +75,14 @@ router.post('/', verifyToken, verifyAdmin, upload.single('image'), async (req, r
     if (!title || !content) {
       return res.status(400).json({
         success: false,
-        message: translateMessage('messages.titleAndContentRequired', language),
+        message: translateMessage(language, 'messages.titleAndContentRequired', 'Title and content are required'),
       });
     }
 
     if (!recipientRoles || !Array.isArray(recipientRoles) || recipientRoles.length === 0) {
       return res.status(400).json({
         success: false,
-        message: translateMessage('messages.recipientRolesRequired', language),
+        message: translateMessage(language, 'messages.recipientRolesRequired', 'At least one recipient role is required'),
       });
     }
 
@@ -92,7 +92,7 @@ router.post('/', verifyToken, verifyAdmin, upload.single('image'), async (req, r
     if (invalidRoles.length > 0) {
       return res.status(400).json({
         success: false,
-        message: translateMessage('messages.invalidRecipientRoles', language),
+        message: translateMessage(language, 'messages.invalidRecipientRoles', 'Invalid recipient roles'),
       });
     }
 
@@ -109,7 +109,7 @@ router.post('/', verifyToken, verifyAdmin, upload.single('image'), async (req, r
         console.error('Image upload error:', uploadError);
         return res.status(500).json({
           success: false,
-          message: translateMessage('messages.imageUploadFailed', language),
+          message: translateMessage(language, 'messages.imageUploadFailed', 'Failed to upload image'),
         });
       }
     }
@@ -138,15 +138,15 @@ router.post('/', verifyToken, verifyAdmin, upload.single('image'), async (req, r
 
     res.status(201).json({
       success: true,
-      message: translateMessage('messages.messageSent', language),
+      message: translateMessage(language, 'messages.messageSent', 'Message sent successfully'),
       data: message,
     });
   } catch (error) {
     console.error('Create message error:', error);
-    const language = getLanguage(req);
+    const errorLanguage = getLanguage(req);
     res.status(500).json({
       success: false,
-      message: translateMessage('messages.createError', language),
+      message: translateMessage(errorLanguage, 'messages.createError', 'Failed to create message'),
       error: error.message,
     });
   }
@@ -187,7 +187,7 @@ router.get('/', verifyToken, async (req, res) => {
     const language = getLanguage(req);
     res.status(500).json({
       success: false,
-      message: translateMessage('messages.fetchError', language),
+      message: translateMessage(language, 'messages.fetchError', 'Failed to fetch messages'),
       error: error.message,
     });
   }
@@ -212,7 +212,7 @@ router.get('/sent', verifyToken, verifyAdmin, async (req, res) => {
     const language = getLanguage(req);
     res.status(500).json({
       success: false,
-      message: translateMessage('messages.fetchError', language),
+      message: translateMessage(language, 'messages.fetchError', 'Failed to fetch sent messages'),
       error: error.message,
     });
   }
@@ -227,7 +227,7 @@ router.put('/:id/read', verifyToken, async (req, res) => {
     if (!message) {
       return res.status(404).json({
         success: false,
-        message: translateMessage('messages.notFound', language),
+        message: translateMessage(language, 'messages.notFound', 'Message not found'),
       });
     }
 
@@ -246,15 +246,15 @@ router.put('/:id/read', verifyToken, async (req, res) => {
 
     res.json({
       success: true,
-      message: translateMessage('messages.markedAsRead', language),
+      message: translateMessage(language, 'messages.markedAsRead', 'Message marked as read'),
       data: message,
     });
   } catch (error) {
     console.error('Mark message as read error:', error);
-    const language = getLanguage(req);
+    const errorLanguage = getLanguage(req);
     res.status(500).json({
       success: false,
-      message: translateMessage('messages.updateError', language),
+      message: translateMessage(errorLanguage, 'messages.updateError', 'Failed to update message'),
       error: error.message,
     });
   }
@@ -281,7 +281,7 @@ router.get('/recipients', verifyToken, verifyAdmin, async (req, res) => {
     const language = getLanguage(req);
     res.status(500).json({
       success: false,
-      message: translateMessage('messages.fetchError', language),
+      message: translateMessage(language, 'messages.fetchError', 'Failed to fetch recipients'),
       error: error.message,
     });
   }

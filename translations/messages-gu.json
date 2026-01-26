@@ -29,6 +29,18 @@
     "serverError": "સર્વર ત્રુટિ",
     "validationError": "માન્યતા ત્રુટિ",
     "missingFields": "કૃપા કરીને બધા જરૂરી ક્ષેત્રો પ્રદાન કરો"
+  },
+  "messages": {
+    "titleAndContentRequired": "શીર્ષક અને સામગ્રી જરૂરી છે",
+    "recipientRolesRequired": "ઓછામાં ઓછી એક પ્રાપ્તકર્તા ભૂમિકા જરૂરી છે",
+    "invalidRecipientRoles": "અમાન્ય પ્રાપ્તકર્તા ભૂમિકાઓ",
+    "imageUploadFailed": "છબી અપલોડ કરવામાં નિષ્ફળ",
+    "messageSent": "સંદેશ સફળતાપૂર્વક મોકલ્યો",
+    "createError": "સંદેશ બનાવવામાં નિષ્ફળ",
+    "fetchError": "સંદેશો મેળવવામાં નિષ્ફળ",
+    "notFound": "સંદેશ મળ્યો નથી",
+    "markedAsRead": "સંદેશ વાંચ્યો તરીકે ચિહ્નિત કર્યો",
+    "updateError": "સંદેશ અપડેટ કરવામાં નિષ્ફળ"
   }
 }
 

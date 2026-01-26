@@ -29,6 +29,18 @@
     "serverError": "Server error",
     "validationError": "Validation error",
     "missingFields": "Please provide all required fields"
+  },
+  "messages": {
+    "titleAndContentRequired": "Title and content are required",
+    "recipientRolesRequired": "At least one recipient role is required",
+    "invalidRecipientRoles": "Invalid recipient roles",
+    "imageUploadFailed": "Failed to upload image",
+    "messageSent": "Message sent successfully",
+    "createError": "Failed to create message",
+    "fetchError": "Failed to fetch messages",
+    "notFound": "Message not found",
+    "markedAsRead": "Message marked as read",
+    "updateError": "Failed to update message"
   }
 }
 

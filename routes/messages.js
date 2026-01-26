@@ -4,7 +4,7 @@ const multer = require('multer');
 const Message = require('../models/Message');
 const User = require('../models/User');
 const { translateMessage, getLanguage } = require('../middleware/translateMessages');
-const { uploadToCloudinary } = require('../config/cloudinary');
+const cloudinary = require('../config/cloudinary');
 
 const router = express.Router();
 
@@ -149,11 +149,32 @@ router.post('/', verifyToken, verifyAdmin, upload.single('image'), async (req, r
     let imageUrl = null;
     if (req.file) {
       try {
-        const uploadResult = await uploadToCloudinary(req.file.buffer, {
-          folder: 'messages',
-          resource_type: 'image',
+        // Upload to Cloudinary using upload_stream for better memory handling
+        const uploadResult = await new Promise((resolve, reject) => {
+          const uploadStream = cloudinary.uploader.upload_stream(
+            {
+              folder: 'messages',
+              resource_type: 'image',
+              transformation: [
+                { width: 1200, height: 1200, crop: 'limit' },
+                { quality: 'auto' },
+              ],
+            },
+            (error, result) => {
+              if (error) {
+                console.error('Cloudinary upload error:', error);
+                reject(error);
+              } else {
+                resolve(result);
+              }
+            }
+          );
+          // Write buffer to upload stream
+          uploadStream.end(req.file.buffer);
         });
+        
         imageUrl = uploadResult.secure_url;
+        console.log('Image uploaded successfully:', imageUrl);
       } catch (uploadError) {
         console.error('Image upload error:', uploadError);
         return res.status(500).json({

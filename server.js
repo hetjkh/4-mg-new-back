@@ -56,6 +56,7 @@ app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/financial', require('./routes/financial'));
 app.use('/api/sales', require('./routes/sales'));
 app.use('/api/messages', require('./routes/messages'));
+app.use('/api/shopkeepers', require('./routes/shopkeepers'));
 
 // Health check
 app.get('/api/health', (req, res) => {

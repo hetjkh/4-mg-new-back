@@ -7,6 +7,7 @@ const Commission = require('../models/Commission');
 const User = require('../models/User');
 const Product = require('../models/Product');
 const StockAllocation = require('../models/StockAllocation');
+const Shopkeeper = require('../models/Shopkeeper');
 const { getLanguage } = require('../middleware/translateMessages');
 
 const router = express.Router();
@@ -131,6 +132,9 @@ router.post('/', verifyToken, async (req, res) => {
       unitPrice,
       customerName,
       customerPhone,
+      customerEmail,
+      shopkeeperId,
+      invoiceNo,
       location,
       saleDate,
       paymentMethod,
@@ -200,6 +204,25 @@ router.post('/', verifyToken, async (req, res) => {
       });
     }
 
+    // Optional shopkeeper validation (if provided)
+    let shopkeeper = null;
+    if (shopkeeperId && mongoose.Types.ObjectId.isValid(shopkeeperId)) {
+      shopkeeper = await Shopkeeper.findById(shopkeeperId);
+      if (!shopkeeper) {
+        return res.status(404).json({ success: false, message: 'Shopkeeper not found' });
+      }
+      // Ensure shopkeeper belongs to this salesman/dealer relationship
+      if (req.user.role === 'salesman') {
+        if (shopkeeper.salesman.toString() !== req.user._id.toString()) {
+          return res.status(403).json({ success: false, message: 'Access denied (shopkeeper)' });
+        }
+      } else if (req.user.role === 'dealer' || req.user.role === 'dellear') {
+        if (shopkeeper.dealer.toString() !== dealer._id.toString()) {
+          return res.status(403).json({ success: false, message: 'Access denied (shopkeeper)' });
+        }
+      }
+    }
+
     // Calculate strips (assuming packetsPerStrip from product)
     const strips = Math.ceil(quantity / (product.packetsPerStrip || 1));
     const totalAmount = quantity * unitPrice;
@@ -214,8 +237,11 @@ router.post('/', verifyToken, async (req, res) => {
       strips,
       unitPrice,
       totalAmount,
-      customerName: customerName || '',
-      customerPhone: customerPhone || '',
+      shopkeeper: shopkeeper ? shopkeeper._id : null,
+      invoiceNo: invoiceNo || '',
+      customerName: customerName || (shopkeeper ? shopkeeper.name : '') || '',
+      customerPhone: customerPhone || (shopkeeper ? shopkeeper.phone : '') || '',
+      customerEmail: (customerEmail || (shopkeeper ? shopkeeper.email : '') || '').toLowerCase().trim(),
       location: location || {},
       saleDate: saleDate ? new Date(saleDate) : new Date(),
       paymentMethod: paymentMethod || 'cash',
@@ -340,11 +366,13 @@ router.get('/', verifyToken, async (req, res) => {
       query.paymentMethod = paymentMethod;
     }
 
-    // Search filter (customer name or phone)
+    // Search filter (customer fields / invoiceNo)
     if (search) {
       query.$or = [
         { customerName: { $regex: search, $options: 'i' } },
         { customerPhone: { $regex: search, $options: 'i' } },
+        { customerEmail: { $regex: search, $options: 'i' } },
+        { invoiceNo: { $regex: search, $options: 'i' } },
       ];
     }
 
@@ -625,6 +653,135 @@ router.delete('/:id', verifyToken, async (req, res) => {
       message: 'Server error while deleting sale',
       error: error.message 
     });
+  }
+});
+
+// ==================== BILL / INVOICE (MULTI-ITEM) ====================
+
+// Create Bill (Salesman only): creates multiple Sale rows under one invoiceNo
+router.post('/bill', verifyToken, verifySalesman, async (req, res) => {
+  try {
+    const { shopkeeperId, customerName, customerPhone, customerEmail, location, saleDate, paymentMethod, paymentStatus, notes, items, invoiceNo } = req.body;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, message: 'Items array is required' });
+    }
+
+    const dealer = await User.findById(req.user.createdBy);
+    if (!dealer || (dealer.role !== 'dealer' && dealer.role !== 'dellear')) {
+      return res.status(400).json({ success: false, message: 'Invalid dealer association' });
+    }
+
+    // Optional shopkeeper
+    let shopkeeper = null;
+    if (shopkeeperId) {
+      if (!mongoose.Types.ObjectId.isValid(shopkeeperId)) {
+        return res.status(400).json({ success: false, message: 'Invalid shopkeeperId format' });
+      }
+      shopkeeper = await Shopkeeper.findById(shopkeeperId);
+      if (!shopkeeper) {
+        return res.status(404).json({ success: false, message: 'Shopkeeper not found' });
+      }
+      if (shopkeeper.salesman.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ success: false, message: 'Access denied (shopkeeper)' });
+      }
+    }
+
+    // Generate invoiceNo if not provided
+    const inv = (invoiceNo && String(invoiceNo).trim()) || `INV-${Date.now()}`;
+
+    const createdSales = [];
+    for (const item of items) {
+      const { productId, quantity, unitPrice, stockAllocationId } = item || {};
+
+      if (!productId || !mongoose.Types.ObjectId.isValid(productId)) {
+        return res.status(400).json({ success: false, message: 'Each item requires valid productId' });
+      }
+      if (!quantity || quantity <= 0) {
+        return res.status(400).json({ success: false, message: 'Each item requires valid quantity' });
+      }
+      if (unitPrice === undefined || unitPrice === null || unitPrice < 0) {
+        return res.status(400).json({ success: false, message: 'Each item requires valid unitPrice' });
+      }
+
+      const product = await Product.findById(productId);
+      if (!product) {
+        return res.status(404).json({ success: false, message: 'Product not found' });
+      }
+
+      const strips = Math.ceil(quantity / (product.packetsPerStrip || 1));
+      const totalAmount = quantity * unitPrice;
+
+      const sale = new Sale({
+        salesman: req.user._id,
+        dealer: dealer._id,
+        product: productId,
+        stockAllocation: stockAllocationId && mongoose.Types.ObjectId.isValid(stockAllocationId) ? stockAllocationId : null,
+        quantity,
+        strips,
+        unitPrice,
+        totalAmount,
+        shopkeeper: shopkeeper ? shopkeeper._id : null,
+        invoiceNo: inv,
+        customerName: customerName || (shopkeeper ? shopkeeper.name : '') || '',
+        customerPhone: customerPhone || (shopkeeper ? shopkeeper.phone : '') || '',
+        customerEmail: (customerEmail || (shopkeeper ? shopkeeper.email : '') || '').toLowerCase().trim(),
+        location: location || (shopkeeper ? shopkeeper.location : {}) || {},
+        saleDate: saleDate ? new Date(saleDate) : new Date(),
+        paymentMethod: paymentMethod || 'cash',
+        paymentStatus: paymentStatus || 'completed',
+        notes: notes || '',
+        createdBy: req.user._id,
+      });
+
+      await sale.save();
+      createdSales.push(sale);
+
+      // Update sales target if exists
+      await updateSalesTarget(req.user._id, dealer._id, totalAmount, strips);
+    }
+
+    // Populate the sales for response
+    const language = getLanguage(req);
+    const populatedSales = await Sale.find({ _id: { $in: createdSales.map((s) => s._id) } })
+      .populate('salesman', 'name email')
+      .populate('dealer', 'name email')
+      .populate('product', 'title packetPrice packetsPerStrip image')
+      .sort({ createdAt: 1 });
+
+    const transformedSales = populatedSales.map((sale) => {
+      const saleObj = sale.toObject ? sale.toObject() : sale;
+      return {
+        ...saleObj,
+        id: saleObj._id || saleObj.id,
+        salesman: saleObj.salesman
+          ? { ...saleObj.salesman, id: saleObj.salesman._id || saleObj.salesman.id }
+          : saleObj.salesman,
+        dealer: saleObj.dealer ? { ...saleObj.dealer, id: saleObj.dealer._id || saleObj.dealer.id } : saleObj.dealer,
+        product: saleObj.product
+          ? {
+              ...saleObj.product,
+              id: saleObj.product._id || saleObj.product.id,
+              title: formatProductTitle(saleObj.product, language),
+            }
+          : saleObj.product,
+      };
+    });
+
+    const grandTotal = transformedSales.reduce((sum, s) => sum + (s.totalAmount || 0), 0);
+
+    res.status(201).json({
+      success: true,
+      message: 'Bill created successfully',
+      data: {
+        invoiceNo: inv,
+        grandTotal,
+        sales: transformedSales,
+      },
+    });
+  } catch (error) {
+    console.error('Create bill error:', error);
+    res.status(500).json({ success: false, message: 'Server error while creating bill', error: error.message });
   }
 });
 

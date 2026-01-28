@@ -63,6 +63,27 @@ const saleSchema = new mongoose.Schema({
     default: '',
     comment: 'Customer phone number (optional)',
   },
+  customerEmail: {
+    type: String,
+    trim: true,
+    lowercase: true,
+    default: '',
+    comment: 'Customer email (optional)',
+  },
+  shopkeeper: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Shopkeeper',
+    default: null,
+    index: true,
+    comment: 'Optional link to shopkeeper/customer master record',
+  },
+  invoiceNo: {
+    type: String,
+    trim: true,
+    default: '',
+    index: true,
+    comment: 'Invoice / bill number to group multi-item bills',
+  },
   location: {
     district: {
       type: String,
@@ -126,6 +147,7 @@ saleSchema.index({ dealer: 1, saleDate: -1 });
 saleSchema.index({ product: 1 });
 saleSchema.index({ saleDate: -1 });
 saleSchema.index({ paymentStatus: 1 });
+saleSchema.index({ invoiceNo: 1, saleDate: -1 });
 
 // Update updatedAt before saving
 saleSchema.pre('save', function(next) {

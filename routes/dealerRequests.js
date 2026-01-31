@@ -10,6 +10,7 @@ const StockAllocation = require('../models/StockAllocation');
 const multer = require('multer');
 const cloudinary = require('../config/cloudinary');
 const { getLanguage } = require('../middleware/translateMessages');
+const PDFDocument = require('pdfkit');
 
 const router = express.Router();
 
@@ -904,6 +905,217 @@ router.get('/dealer/:dealerId/stats', verifyToken, verifyStalkist, async (req, r
     res.status(500).json({ 
       success: false, 
       message: 'Server error while fetching dealer statistics',
+      error: error.message 
+    });
+  }
+});
+
+// Generate PDF Bill for Approved Dealer Request (Admin only)
+router.get('/:id/bill', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid request ID format' 
+      });
+    }
+
+    const request = await DealerRequest.findById(req.params.id)
+      .populate('product', 'title packetPrice packetsPerStrip image')
+      .populate('dealer', 'name email')
+      .populate('processedBy', 'name email');
+
+    if (!request) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Request not found' 
+      });
+    }
+
+    // Only generate bill for approved requests
+    if (request.status !== 'approved') {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Cannot generate bill for ${request.status} request. Only approved requests can have bills.` 
+      });
+    }
+
+    const language = getLanguage(req);
+    const productTitle = formatProductTitle(request.product, language);
+    
+    // Calculate totals
+    const totalPackets = request.strips * (request.product.packetsPerStrip || 1);
+    const totalAmount = totalPackets * (request.product.packetPrice || 0);
+    const unitPrice = request.product.packetPrice || 0;
+
+    // Create PDF
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    
+    // Set response headers
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Bill-${request.id}.pdf"`);
+
+    // Pipe PDF to response
+    doc.pipe(res);
+
+    // Set initial y-position after margins
+    let y = 50;
+    
+    // Company Header with better spacing
+    doc.fontSize(16).font('Helvetica-Bold').text('SAFALATA FOOD PRIVATE LIMITED', 50, y, { align: 'center', width: 500 });
+    y += 25;
+    
+    doc.fontSize(10).font('Helvetica');
+    doc.text('1, Momai Nagar, B/h Amar Nagar', 50, y, { align: 'center', width: 500 });
+    y += 15;
+    doc.text('Odhav-Ahmedabad-382415', 50, y, { align: 'center', width: 500 });
+    y += 15;
+    doc.text('Mobile: 99981 09435', 50, y, { align: 'center', width: 500 });
+    y += 15;
+    doc.text('GST No. 24ABRCS1053J1Z5', 50, y, { align: 'center', width: 500 });
+    y += 30;
+    
+    // Document Title with underline
+    doc.fontSize(18).font('Helvetica-Bold').text('TAX INVOICE', 50, y, { align: 'center', width: 500 });
+    y += 25;
+    
+    // Invoice details in two columns
+    const startX = 50;
+    const col1Width = 100;
+    const col2Width = 200;
+    
+    // Left column (Invoice No, Date)
+    doc.fontSize(10).font('Helvetica');
+    doc.text('Invoice No:', startX, y);
+    doc.text('Date:', startX, y + 15);
+    
+    // Right column (values)
+    doc.font('Helvetica-Bold');
+    doc.text(`#${request.id}`, startX + col1Width, y);
+    doc.text(new Date(request.processedAt || request.requestedAt).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    }), startX + col1Width, y + 15);
+    
+    y += 40;
+    
+    // Dealer Info
+    doc.fontSize(10).font('Helvetica-Bold').text('Bill To:', startX, y);
+    y += 15;
+    doc.font('Helvetica');
+    doc.text(request.dealer.name, startX + 10, y);
+    y += 15;
+    doc.text(request.dealer.email, startX + 10, y);
+    y += 20;
+    
+    // Line
+    doc.moveTo(startX, y).lineTo(550, y).stroke();
+    y += 10;
+    
+    // Product Details Table Header with background
+    doc.rect(startX, y, 500, 20).fill('#f0f0f0');
+    doc.fillColor('#000000');
+    
+    doc.fontSize(10).font('Helvetica-Bold');
+    doc.text('Product Name', startX + 5, y + 5);
+    doc.text('Strips', startX + 250, y + 5, { width: 60, align: 'right' });
+    doc.text('Pkts/Strip', startX + 320, y + 5, { width: 70, align: 'right' });
+    doc.text('Total Pkts', startX + 400, y + 5, { width: 60, align: 'right' });
+    doc.text('Rate (₹)', startX + 470, y + 5, { width: 40, align: 'right' });
+    doc.text('Amount (₹)', startX + 520, y + 5, { width: 60, align: 'right' });
+    
+    y += 25;
+    
+    // Product Rows
+    doc.font('Helvetica');
+    
+    // Product Name
+    doc.text(productTitle, startX + 5, y, { width: 200, lineGap: 5 });
+    
+    // Strips
+    doc.text(request.strips.toString(), startX + 250, y, { width: 60, align: 'right' });
+    
+    // Packets per Strip
+    doc.text((request.product.packetsPerStrip || 1).toString(), startX + 320, y, { width: 70, align: 'right' });
+    
+    // Total Packets
+    doc.text(totalPackets.toString(), startX + 400, y, { width: 60, align: 'right' });
+    
+    // Unit Price
+    doc.text(`₹${unitPrice.toFixed(2)}`, startX + 470, y, { width: 40, align: 'right' });
+    
+    // Total Amount
+    doc.text(`₹${totalAmount.toFixed(2)}`, startX + 520, y, { width: 60, align: 'right' });
+    
+    y += 30;
+    
+    // Total Row
+    doc.font('Helvetica-Bold');
+    doc.text('Total Amount:', startX + 400, y, { width: 110, align: 'right' });
+    doc.text(`₹${totalAmount.toFixed(2)}`, startX + 520, y, { width: 60, align: 'right' });
+    
+    // GST Calculation (assuming 18% GST)
+    const gstRate = 18; // 18% GST
+    const gstAmount = (totalAmount * gstRate) / 100;
+    const grandTotal = totalAmount + gstAmount;
+    
+    y += 20;
+    doc.text(`CGST (${gstRate/2}%):`, startX + 400, y, { width: 110, align: 'right' });
+    doc.text(`₹${(gstAmount/2).toFixed(2)}`, startX + 520, y, { width: 60, align: 'right' });
+    
+    y += 15;
+    doc.text(`SGST (${gstRate/2}%):`, startX + 400, y, { width: 110, align: 'right' });
+    doc.text(`₹${(gstAmount/2).toFixed(2)}`, startX + 520, y, { width: 60, align: 'right' });
+    
+    y += 20;
+    doc.fontSize(12);
+    doc.text('Grand Total:', startX + 400, y, { width: 110, align: 'right' });
+    doc.text(`₹${grandTotal.toFixed(2)}`, startX + 520, y, { width: 60, align: 'right' });
+    
+    y += 40;
+    
+    // Notes
+    if (request.notes) {
+      doc.fontSize(10).font('Helvetica-Bold').text('Notes:', startX, y);
+      y += 15;
+      doc.font('Helvetica');
+      doc.text(request.notes, startX + 10, y, { width: 500 });
+      y += 30;
+    }
+    
+    // Terms and Conditions
+    doc.fontSize(10).font('Helvetica-Bold').text('Terms & Conditions:', startX, y);
+    y += 15;
+    doc.font('Helvetica');
+    doc.text('• Goods once sold will not be taken back.', startX + 10, y, { width: 500 });
+    y += 15;
+    doc.text('• Payment should be made in full before delivery.', startX + 10, y, { width: 500 });
+    y += 15;
+    doc.text('• All disputes are subject to Ahmedabad jurisdiction.', startX + 10, y, { width: 500 });
+    
+    y += 30;
+    
+    // Thank you message
+    doc.fontSize(12).font('Helvetica-Bold').text('Thank you for your business!', startX, y, { align: 'center', width: 500 });
+    
+    // Footer
+    y = doc.page.height - 50;
+    doc.fontSize(8).font('Helvetica').text(
+      `Generated on ${new Date().toLocaleString('en-IN')} | This is a computer-generated invoice, no signature required.`,
+      startX,
+      y,
+      { align: 'center', width: 500 }
+    );
+
+    // Finalize PDF
+    doc.end();
+  } catch (error) {
+    console.error('Generate bill PDF error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error while generating bill PDF',
       error: error.message 
     });
   }

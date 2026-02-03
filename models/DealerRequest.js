@@ -67,6 +67,22 @@ const dealerRequestSchema = new mongoose.Schema({
     trim: true,
     default: '',
   },
+  billSent: {
+    type: Boolean,
+    default: false,
+    comment: 'Whether the bill has been sent to the dealer',
+  },
+  billSentAt: {
+    type: Date,
+    default: null,
+    comment: 'Date when the bill was sent to the dealer',
+  },
+  billSentBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+    comment: 'Admin who sent the bill',
+  },
 }, {
   timestamps: true,
   toJSON: {

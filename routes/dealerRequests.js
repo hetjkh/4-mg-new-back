@@ -208,6 +208,7 @@ router.get('/', verifyToken, async (req, res) => {
       .populate('dealer', 'name email')
       .populate('processedBy', 'name email')
       .populate('paymentVerifiedBy', 'name email')
+      .populate('billSentBy', 'name email')
       .sort({ createdAt: -1 });
 
     // Transform requests to ensure all IDs are properly mapped and format product titles
@@ -233,6 +234,10 @@ router.get('/', verifyToken, async (req, res) => {
           ...requestObj.paymentVerifiedBy,
           id: requestObj.paymentVerifiedBy._id || requestObj.paymentVerifiedBy.id,
         } : requestObj.paymentVerifiedBy,
+        billSentBy: requestObj.billSentBy ? {
+          ...requestObj.billSentBy,
+          id: requestObj.billSentBy._id || requestObj.billSentBy.id,
+        } : requestObj.billSentBy,
       };
     });
 
@@ -318,7 +323,8 @@ router.get('/:id', verifyToken, async (req, res) => {
       .populate('product', 'title packetPrice packetsPerStrip image stock')
       .populate('dealer', 'name email')
       .populate('processedBy', 'name email')
-      .populate('paymentVerifiedBy', 'name email');
+      .populate('paymentVerifiedBy', 'name email')
+      .populate('billSentBy', 'name email');
 
     if (!request) {
       return res.status(404).json({ 
@@ -358,6 +364,10 @@ router.get('/:id', verifyToken, async (req, res) => {
         ...requestObj.paymentVerifiedBy,
         id: requestObj.paymentVerifiedBy._id || requestObj.paymentVerifiedBy.id,
       } : requestObj.paymentVerifiedBy,
+      billSentBy: requestObj.billSentBy ? {
+        ...requestObj.billSentBy,
+        id: requestObj.billSentBy._id || requestObj.billSentBy.id,
+      } : requestObj.billSentBy,
     };
 
     res.json({
@@ -699,6 +709,7 @@ router.put('/:id/approve', verifyToken, verifyAdmin, async (req, res) => {
     await request.populate('dealer', 'name email');
     await request.populate('processedBy', 'name email');
     await request.populate('paymentVerifiedBy', 'name email');
+    await request.populate('billSentBy', 'name email');
 
     const language = getLanguage(req);
     const requestObj = request.toObject ? request.toObject() : request;
@@ -722,6 +733,10 @@ router.put('/:id/approve', verifyToken, verifyAdmin, async (req, res) => {
         ...requestObj.paymentVerifiedBy,
         id: requestObj.paymentVerifiedBy._id || requestObj.paymentVerifiedBy.id,
       } : requestObj.paymentVerifiedBy,
+      billSentBy: requestObj.billSentBy ? {
+        ...requestObj.billSentBy,
+        id: requestObj.billSentBy._id || requestObj.billSentBy.id,
+      } : requestObj.billSentBy,
     };
 
     res.json({
@@ -734,6 +749,90 @@ router.put('/:id/approve', verifyToken, verifyAdmin, async (req, res) => {
     res.status(500).json({ 
       success: false, 
       message: error.message || 'Server error during request approval',
+      error: error.message 
+    });
+  }
+});
+
+// Send Bill to Dealer (Admin only)
+router.put('/:id/send-bill', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid request ID format' 
+      });
+    }
+
+    const request = await DealerRequest.findById(req.params.id)
+      .populate('product', 'title packetPrice packetsPerStrip image')
+      .populate('dealer', 'name email');
+
+    if (!request) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Request not found' 
+      });
+    }
+
+    if (request.status !== 'approved') {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Cannot send bill. Request status is ${request.status}. Only approved requests can have bills sent.` 
+      });
+    }
+
+    // Mark bill as sent
+    request.billSent = true;
+    request.billSentAt = new Date();
+    request.billSentBy = req.user._id;
+    await request.save();
+
+    await request.populate('product', 'title packetPrice packetsPerStrip image');
+    await request.populate('dealer', 'name email');
+    await request.populate('processedBy', 'name email');
+    await request.populate('paymentVerifiedBy', 'name email');
+    await request.populate('billSentBy', 'name email');
+
+    const language = getLanguage(req);
+    const requestObj = request.toObject ? request.toObject() : request;
+    const transformedRequest = {
+      ...requestObj,
+      id: requestObj._id || requestObj.id,
+      dealer: requestObj.dealer ? {
+        ...requestObj.dealer,
+        id: requestObj.dealer._id || requestObj.dealer.id,
+      } : requestObj.dealer,
+      product: requestObj.product ? {
+        ...requestObj.product,
+        id: requestObj.product._id || requestObj.product.id,
+        title: formatProductTitle(requestObj.product, language),
+      } : requestObj.product,
+      processedBy: requestObj.processedBy ? {
+        ...requestObj.processedBy,
+        id: requestObj.processedBy._id || requestObj.processedBy.id,
+      } : requestObj.processedBy,
+      paymentVerifiedBy: requestObj.paymentVerifiedBy ? {
+        ...requestObj.paymentVerifiedBy,
+        id: requestObj.paymentVerifiedBy._id || requestObj.paymentVerifiedBy.id,
+      } : requestObj.paymentVerifiedBy,
+      billSentBy: requestObj.billSentBy ? {
+        ...requestObj.billSentBy,
+        id: requestObj.billSentBy._id || requestObj.billSentBy.id,
+      } : requestObj.billSentBy,
+    };
+
+    res.json({
+      success: true,
+      message: 'Bill sent to dealer successfully',
+      data: { request: transformedRequest },
+    });
+  } catch (error) {
+    console.error('Send bill error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message || 'Server error while sending bill',
       error: error.message 
     });
   }
@@ -910,6 +1009,56 @@ router.get('/dealer/:dealerId/stats', verifyToken, verifyStalkist, async (req, r
   }
 });
 
+// Helper function to convert number to words (Indian numbering system)
+function convertNumberToWords(amount) {
+  const ones = ['', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN',
+    'ELEVEN', 'TWELVE', 'THIRTEEN', 'FOURTEEN', 'FIFTEEN', 'SIXTEEN', 'SEVENTEEN', 'EIGHTEEN', 'NINETEEN'];
+  const tens = ['', '', 'TWENTY', 'THIRTY', 'FORTY', 'FIFTY', 'SIXTY', 'SEVENTY', 'EIGHTY', 'NINETY'];
+  
+  function convertHundreds(num) {
+    let result = '';
+    if (num >= 100) {
+      result += ones[Math.floor(num / 100)] + ' HUNDRED ';
+      num %= 100;
+    }
+    if (num >= 20) {
+      result += tens[Math.floor(num / 10)] + ' ';
+      num %= 10;
+    }
+    if (num > 0) {
+      result += ones[num] + ' ';
+    }
+    return result.trim();
+  }
+  
+  if (amount === 0) return 'ZERO';
+  
+  let words = '';
+  const crore = Math.floor(amount / 10000000);
+  const lakh = Math.floor((amount % 10000000) / 100000);
+  const thousand = Math.floor((amount % 100000) / 1000);
+  const hundred = Math.floor((amount % 1000) / 100);
+  const remainder = amount % 100;
+  
+  if (crore > 0) {
+    words += convertHundreds(crore) + ' CRORE ';
+  }
+  if (lakh > 0) {
+    words += convertHundreds(lakh) + ' LAKH ';
+  }
+  if (thousand > 0) {
+    words += convertHundreds(thousand) + ' THOUSAND ';
+  }
+  if (hundred > 0) {
+    words += convertHundreds(hundred) + ' HUNDRED ';
+  }
+  if (remainder > 0) {
+    words += convertHundreds(remainder);
+  }
+  
+  return words.trim() + ' RUPEES ONLY';
+}
+
 // Generate PDF Bill for Approved Dealer Request (Admin only)
 router.get('/:id/bill', verifyToken, verifyAdmin, async (req, res) => {
   try {
@@ -961,152 +1110,271 @@ router.get('/:id/bill', verifyToken, verifyAdmin, async (req, res) => {
 
     // Set initial y-position after margins
     let y = 50;
-    
-    // Company Header with better spacing
-    doc.fontSize(16).font('Helvetica-Bold').text('SAFALATA FOOD PRIVATE LIMITED', 50, y, { align: 'center', width: 500 });
-    y += 25;
-    
-    doc.fontSize(10).font('Helvetica');
-    doc.text('1, Momai Nagar, B/h Amar Nagar', 50, y, { align: 'center', width: 500 });
-    y += 15;
-    doc.text('Odhav-Ahmedabad-382415', 50, y, { align: 'center', width: 500 });
-    y += 15;
-    doc.text('Mobile: 99981 09435', 50, y, { align: 'center', width: 500 });
-    y += 15;
-    doc.text('GST No. 24ABRCS1053J1Z5', 50, y, { align: 'center', width: 500 });
-    y += 30;
-    
-    // Document Title with underline
-    doc.fontSize(18).font('Helvetica-Bold').text('TAX INVOICE', 50, y, { align: 'center', width: 500 });
-    y += 25;
-    
-    // Invoice details in two columns
     const startX = 50;
-    const col1Width = 100;
-    const col2Width = 200;
+    const pageWidth = 500;
+    const rightSectionX = 320; // Right side starts here for invoice details
     
-    // Left column (Invoice No, Date)
+    // ========== HEADER SECTION ==========
+    // Tax Invoice Title - TOP CENTER (Large and Bold, at the very top)
+    doc.fontSize(24).font('Helvetica-Bold').text('TAX INVOICE', startX, y, { width: pageWidth, align: 'center' });
+    y += 40; // Increased spacing
+    
+    // Company Name - BELOW TAX INVOICE, LEFT SIDE (Reduced size)
+    doc.fontSize(14).font('Helvetica-Bold').text('SAFALATA FOOD PRIVATE LIMITED', startX, y);
+    let companyInfoY = y + 20; // Increased spacing
+    
+    // Company Address Box - LEFT SIDE (with border)
+    const companyBoxY = y;
+    const companyBoxHeight = 70;
+    doc.rect(startX, companyBoxY, 240, companyBoxHeight).stroke();
+    
+    // Company Address - LEFT SIDE
     doc.fontSize(10).font('Helvetica');
-    doc.text('Invoice No:', startX, y);
-    doc.text('Date:', startX, y + 15);
+    doc.text('1, Momai Nagar, B/h Amar Nagar', startX + 5, companyInfoY);
+    companyInfoY += 15; // Increased spacing
+    doc.text('Odhav-Ahmedabad-382415.', startX + 5, companyInfoY);
+    companyInfoY += 15; // Increased spacing
+    doc.text('Mobile No.: 9998109435', startX + 5, companyInfoY);
+    companyInfoY += 15; // Increased spacing
+    doc.text('GST No.: 24ABRCS1053J1Z5', startX + 5, companyInfoY);
     
-    // Right column (values)
+    // ========== INVOICE DETAILS SECTION (TOP RIGHT) ==========
+    // Calculate invoice number (format: sequential/year-year)
+    const invoiceDate = new Date(request.processedAt || request.requestedAt);
+    const financialYear = invoiceDate.getMonth() >= 3 
+      ? `${invoiceDate.getFullYear()}-${String(invoiceDate.getFullYear() + 1).slice(-2)}`
+      : `${invoiceDate.getFullYear() - 1}-${String(invoiceDate.getFullYear()).slice(-2)}`;
+    
+    // Use request ID short version or sequential number (format: XX/YYYY-YY)
+    const invoiceNumber = `${String(request._id.toString().slice(-2))}/${financialYear}`;
+    // Format date as DD-MM-YYYY
+    const day = String(invoiceDate.getDate()).padStart(2, '0');
+    const month = String(invoiceDate.getMonth() + 1).padStart(2, '0');
+    const year = invoiceDate.getFullYear();
+    const invoiceDateFormatted = `${day}-${month}-${year}`;
+    
+    // Invoice Details Box - RIGHT SIDE (with border)
+    const invoiceDetailsY = 120; // Increased spacing from top
+    const invoiceBoxWidth = 250;
+    const invoiceBoxHeight = 75;
+    doc.rect(rightSectionX, invoiceDetailsY - 5, invoiceBoxWidth, invoiceBoxHeight).stroke();
+    
+    const leftColLabelX = rightSectionX + 5;
+    const leftColValueX = rightSectionX + 85;
+    const rightColLabelX = rightSectionX + 130;
+    const rightColValueX = rightSectionX + 210;
+    const lineHeight = 18; // Increased line height
+    
+    // Left Column Labels - Invoice Details
+    doc.fontSize(9).font('Helvetica');
+    doc.text('Invoice No.:', leftColLabelX, invoiceDetailsY);
+    doc.text('Dated:', leftColLabelX, invoiceDetailsY + lineHeight);
+    doc.text('Buyer\'s Order No.:', leftColLabelX, invoiceDetailsY + (lineHeight * 2));
+    doc.text('Dated:', leftColLabelX, invoiceDetailsY + (lineHeight * 3));
+    
+    // Left Column Values
     doc.font('Helvetica-Bold');
-    doc.text(`#${request.id}`, startX + col1Width, y);
-    doc.text(new Date(request.processedAt || request.requestedAt).toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    }), startX + col1Width, y + 15);
+    doc.text(invoiceNumber, leftColValueX, invoiceDetailsY);
+    doc.text(invoiceDateFormatted, leftColValueX, invoiceDetailsY + lineHeight);
+    const buyerOrderNo = String(request._id.toString().slice(-2)).padStart(2, '0');
+    doc.text(buyerOrderNo, leftColValueX, invoiceDetailsY + (lineHeight * 2));
+    doc.text(invoiceDateFormatted, leftColValueX, invoiceDetailsY + (lineHeight * 3));
     
-    y += 40;
-    
-    // Dealer Info
-    doc.fontSize(10).font('Helvetica-Bold').text('Bill To:', startX, y);
-    y += 15;
+    // Right Column Labels - Dispatch Information
     doc.font('Helvetica');
-    doc.text(request.dealer.name, startX + 10, y);
-    y += 15;
-    doc.text(request.dealer.email, startX + 10, y);
-    y += 20;
+    doc.text('Dispatched through:', rightColLabelX, invoiceDetailsY);
+    doc.text('Dispatched Document No.:', rightColLabelX, invoiceDetailsY + lineHeight);
     
-    // Line
-    doc.moveTo(startX, y).lineTo(550, y).stroke();
-    y += 10;
+    // Right Column Values
+    doc.font('Helvetica-Bold');
+    doc.text('company vehicle', rightColValueX, invoiceDetailsY);
+    const dispatchDocNo = `GJ-${String(invoiceDate.getDate()).padStart(2, '0')}-TT-${String(request._id.toString().slice(-4))}`;
+    doc.text(dispatchDocNo, rightColValueX, invoiceDetailsY + lineHeight);
     
-    // Product Details Table Header with background
-    doc.rect(startX, y, 500, 20).fill('#f0f0f0');
+    // ========== BUYER INFORMATION SECTION (MID-LEFT) - Box Structure ==========
+    y = 200; // Increased spacing from invoice details
+    const buyerBoxY = y;
+    const buyerBoxHeight = 50;
+    doc.rect(startX, buyerBoxY, 240, buyerBoxHeight).stroke();
+    
+    doc.fontSize(10).font('Helvetica-Bold').text('Buyer (Bill to):', startX + 5, y + 5);
+    y += 18; // Increased spacing
+    doc.font('Helvetica');
+    doc.text(request.dealer.name, startX + 5, y);
+    y += 15; // Increased spacing
+    const buyerAddress = request.dealer.email || 'Address not provided';
+    doc.text(buyerAddress, startX + 5, y, { width: 220 });
+    
+    // ========== DESTINATION SECTION (MID-RIGHT) - Box Structure ==========
+    const destinationY = 200; // Increased spacing
+    const destinationBoxHeight = 50;
+    doc.rect(rightSectionX, destinationY, 250, destinationBoxHeight).stroke();
+    
+    doc.fontSize(10).font('Helvetica-Bold').text('Destination:', rightSectionX + 5, destinationY + 5);
+    doc.font('Helvetica');
+    doc.text(buyerAddress, rightSectionX + 5, destinationY + 23, { width: 220 });
+    
+    // ========== PAYMENT TERMS SECTION - Box Structure ==========
+    y = 255; // Increased spacing
+    const paymentTermsBoxHeight = 25;
+    doc.rect(startX, y, 240, paymentTermsBoxHeight).stroke();
+    
+    doc.fontSize(10).font('Helvetica-Bold').text('Payment Terms:', startX + 5, y + 5);
+    y += 18; // Increased spacing
+    
+    // Separator line before product table
+    y += 10; // Increased spacing before line
+    doc.moveTo(startX, y).lineTo(startX + pageWidth, y).stroke();
+    y += 20; // Increased spacing after line
+    
+    // ========== PRODUCT TABLE - Box Structure ==========
+    // Table Header with background
+    const tableHeaderHeight = 20;
+    const tableBoxY = y;
+    doc.rect(startX, tableBoxY, pageWidth, tableHeaderHeight).fill('#f0f0f0').stroke();
     doc.fillColor('#000000');
     
-    doc.fontSize(10).font('Helvetica-Bold');
-    doc.text('Product Name', startX + 5, y + 5);
-    doc.text('Strips', startX + 250, y + 5, { width: 60, align: 'right' });
-    doc.text('Pkts/Strip', startX + 320, y + 5, { width: 70, align: 'right' });
-    doc.text('Total Pkts', startX + 400, y + 5, { width: 60, align: 'right' });
-    doc.text('Rate (₹)', startX + 470, y + 5, { width: 40, align: 'right' });
-    doc.text('Amount (₹)', startX + 520, y + 5, { width: 60, align: 'right' });
+    // Column positions
+    const colSI = startX + 5;
+    const colDesc = startX + 35;
+    const colHSN = startX + 180;
+    const colQty = startX + 250;
+    const colUnit = startX + 300;
+    const colRate = startX + 360;
+    const colAmount = startX + 420;
     
-    y += 25;
+    doc.fontSize(9).font('Helvetica-Bold');
+    doc.text('SI No.', colSI, y + 6);
+    doc.text('Description', colDesc, y + 6);
+    doc.text('HSN/SAC', colHSN, y + 6);
+    doc.text('Qty', colQty, y + 6, { width: 40, align: 'right' });
+    doc.text('Unit', colUnit, y + 6, { width: 50, align: 'right' });
+    doc.text('Rate', colRate, y + 6, { width: 50, align: 'right' });
+    doc.text('Amount', colAmount, y + 6, { width: 70, align: 'right' });
     
-    // Product Rows
+    y += tableHeaderHeight + 8; // Increased spacing
+    
+    // Product Row
+    doc.fontSize(9).font('Helvetica');
+    doc.text('1', colSI, y);
+    doc.text(productTitle, colDesc, y, { width: 140 });
+    doc.text('2106', colHSN, y); // HSN code for food products
+    doc.text(totalPackets.toString(), colQty, y, { width: 40, align: 'right' });
+    doc.text('Pkt', colUnit, y, { width: 50, align: 'right' });
+    doc.text(`₹${unitPrice.toFixed(2)}`, colRate, y, { width: 50, align: 'right' });
+    doc.text(`₹${totalAmount.toFixed(2)}`, colAmount, y, { width: 70, align: 'right' });
+    
+    // Close the table box
+    const tableTotalHeight = y + 25 - tableBoxY;
+    doc.rect(startX, tableBoxY, pageWidth, tableTotalHeight).stroke();
+    
+    y += 25; // Increased spacing after product row
+    
+    // ========== SUMMARY SECTION (BOTTOM RIGHT) - Box Structure ==========*
+    const summaryStartY = y;
+    const summaryBoxWidth = 200;
+    const summaryBoxHeight = 120;
+    doc.rect(startX + pageWidth - summaryBoxWidth, summaryStartY, summaryBoxWidth, summaryBoxHeight).stroke();
+    
+    const summaryLabelX = startX + 350;
+    const summaryValueX = startX + 450;
+    const summaryWidth = 100;
+    
+    // Subtotal
+    doc.fontSize(9).font('Helvetica');
+    doc.text('Subtotal:', summaryLabelX, y, { width: summaryWidth, align: 'right' });
+    doc.text(`₹${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, summaryValueX, y, { width: 50, align: 'right' });
+    y += 18; // Increased spacing
+    
+    // GST Calculation (2.5% CGST + 2.5% SGST = 5% total)
+    const cgstRate = 2.5;
+    const sgstRate = 2.5;
+    const cgstAmount = (totalAmount * cgstRate) / 100;
+    const sgstAmount = (totalAmount * sgstRate) / 100;
+    
+    doc.text(`Output CGST @ ${cgstRate}%:`, summaryLabelX, y, { width: summaryWidth, align: 'right' });
+    doc.text(`₹${cgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, summaryValueX, y, { width: 50, align: 'right' });
+    y += 18; // Increased spacing
+    
+    doc.text(`Output SGST @ ${sgstRate}%:`, summaryLabelX, y, { width: summaryWidth, align: 'right' });
+    doc.text(`₹${sgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, summaryValueX, y, { width: 50, align: 'right' });
+    y += 18; // Increased spacing
+    
+    // Rounding off
+    const grandTotalBeforeRounding = totalAmount + cgstAmount + sgstAmount;
+    const roundingOff = Math.round(grandTotalBeforeRounding) - grandTotalBeforeRounding;
+    const grandTotal = Math.round(grandTotalBeforeRounding);
+    
+    doc.text('Rounding off:', summaryLabelX, y, { width: summaryWidth, align: 'right' });
+    doc.text(`₹${roundingOff.toFixed(2)}`, summaryValueX, y, { width: 50, align: 'right' });
+    y += 20; // Increased spacing before total
+    
+    // Total
+    doc.fontSize(11).font('Helvetica-Bold');
+    doc.text('Total:', summaryLabelX, y, { width: summaryWidth, align: 'right' });
+    doc.text(`₹${grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, summaryValueX, y, { width: 50, align: 'right' });
+    
+    y += 35; // Increased spacing after total
+    
+    // ========== FOOTER SECTION - Box Structures ==========
+    // Amount in Words Box (Bottom Left)
+    const amountWordsBoxY = y;
+    const amountWordsBoxHeight = 45;
+    doc.rect(startX, amountWordsBoxY, 300, amountWordsBoxHeight).stroke();
+    
+    const amountInWords = convertNumberToWords(grandTotal);
+    doc.fontSize(9).font('Helvetica-Bold').text('Amount Chargeable (in words):', startX + 5, y + 5);
+    y += 15; // Increased spacing
     doc.font('Helvetica');
+    doc.text(amountInWords, startX + 5, y, { width: 290 });
     
-    // Product Name
-    doc.text(productTitle, startX + 5, y, { width: 200, lineGap: 5 });
+    // E. & O.E (Errors and Omissions Excepted) - Next to Total
+    doc.fontSize(8).font('Helvetica').text('E. & O.E', summaryValueX + 60, summaryStartY + 70);
     
-    // Strips
-    doc.text(request.strips.toString(), startX + 250, y, { width: 60, align: 'right' });
+    // Remarks Box (Below amount in words)
+    y = amountWordsBoxY + amountWordsBoxHeight + 10;
+    const remarksBoxHeight = 30;
+    doc.rect(startX, y, 300, remarksBoxHeight).stroke();
     
-    // Packets per Strip
-    doc.text((request.product.packetsPerStrip || 1).toString(), startX + 320, y, { width: 70, align: 'right' });
-    
-    // Total Packets
-    doc.text(totalPackets.toString(), startX + 400, y, { width: 60, align: 'right' });
-    
-    // Unit Price
-    doc.text(`₹${unitPrice.toFixed(2)}`, startX + 470, y, { width: 40, align: 'right' });
-    
-    // Total Amount
-    doc.text(`₹${totalAmount.toFixed(2)}`, startX + 520, y, { width: 60, align: 'right' });
-    
-    y += 30;
-    
-    // Total Row
-    doc.font('Helvetica-Bold');
-    doc.text('Total Amount:', startX + 400, y, { width: 110, align: 'right' });
-    doc.text(`₹${totalAmount.toFixed(2)}`, startX + 520, y, { width: 60, align: 'right' });
-    
-    // GST Calculation (assuming 18% GST)
-    const gstRate = 18; // 18% GST
-    const gstAmount = (totalAmount * gstRate) / 100;
-    const grandTotal = totalAmount + gstAmount;
-    
-    y += 20;
-    doc.text(`CGST (${gstRate/2}%):`, startX + 400, y, { width: 110, align: 'right' });
-    doc.text(`₹${(gstAmount/2).toFixed(2)}`, startX + 520, y, { width: 60, align: 'right' });
-    
-    y += 15;
-    doc.text(`SGST (${gstRate/2}%):`, startX + 400, y, { width: 110, align: 'right' });
-    doc.text(`₹${(gstAmount/2).toFixed(2)}`, startX + 520, y, { width: 60, align: 'right' });
-    
-    y += 20;
-    doc.fontSize(12);
-    doc.text('Grand Total:', startX + 400, y, { width: 110, align: 'right' });
-    doc.text(`₹${grandTotal.toFixed(2)}`, startX + 520, y, { width: 60, align: 'right' });
-    
-    y += 40;
-    
-    // Notes
-    if (request.notes) {
-      doc.fontSize(10).font('Helvetica-Bold').text('Notes:', startX, y);
-      y += 15;
-      doc.font('Helvetica');
-      doc.text(request.notes, startX + 10, y, { width: 500 });
-      y += 30;
-    }
-    
-    // Terms and Conditions
-    doc.fontSize(10).font('Helvetica-Bold').text('Terms & Conditions:', startX, y);
-    y += 15;
+    doc.fontSize(9).font('Helvetica-Bold').text('Remarks:', startX + 5, y + 5);
+    y += 15; // Increased spacing
     doc.font('Helvetica');
-    doc.text('• Goods once sold will not be taken back.', startX + 10, y, { width: 500 });
-    y += 15;
-    doc.text('• Payment should be made in full before delivery.', startX + 10, y, { width: 500 });
-    y += 15;
-    doc.text('• All disputes are subject to Ahmedabad jurisdiction.', startX + 10, y, { width: 500 });
+    doc.text('Total payment due in 30 days', startX + 5, y, { width: 290 });
     
-    y += 30;
+    // Bank Details Box (Right side)
+    let bankDetailsY = summaryStartY + 110; // Increased spacing
+    const bankDetailsBoxHeight = 100;
+    doc.rect(rightSectionX, bankDetailsY, 250, bankDetailsBoxHeight).stroke();
     
-    // Thank you message
-    doc.fontSize(12).font('Helvetica-Bold').text('Thank you for your business!', startX, y, { align: 'center', width: 500 });
+    doc.fontSize(9).font('Helvetica-Bold').text('Company\'s Bank Details:', rightSectionX + 5, bankDetailsY + 5);
+    bankDetailsY += 18; // Increased spacing
+    doc.font('Helvetica');
+    doc.text('Bank Name:', rightSectionX + 5, bankDetailsY);
+    bankDetailsY += 15; // Increased spacing
+    doc.text('Account No.:', rightSectionX + 5, bankDetailsY);
+    bankDetailsY += 15; // Increased spacing
+    doc.text('IFSC Code:', rightSectionX + 5, bankDetailsY);
+    bankDetailsY += 15; // Increased spacing
+    doc.text('Branch:', rightSectionX + 5, bankDetailsY);
     
-    // Footer
-    y = doc.page.height - 50;
+    // A/c Holder's Name
+    bankDetailsY += 20; // Increased spacing
+    doc.fontSize(9).font('Helvetica-Bold').text('A/c Holder\'s Name:', rightSectionX + 5, bankDetailsY);
+    bankDetailsY += 15; // Increased spacing
+    doc.font('Helvetica');
+    doc.text('SAFALATA FOOD PRIVATE LIMITED', rightSectionX + 5, bankDetailsY);
+    
+    // Footer line
+    y = doc.page.height - 40;
+    doc.moveTo(startX, y).lineTo(startX + pageWidth, y).stroke();
+    y += 10;
+    
+    // Footer text
     doc.fontSize(8).font('Helvetica').text(
       `Generated on ${new Date().toLocaleString('en-IN')} | This is a computer-generated invoice, no signature required.`,
       startX,
       y,
-      { align: 'center', width: 500 }
+      { align: 'center', width: pageWidth }
     );
 
     // Finalize PDF

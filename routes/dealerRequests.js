@@ -112,7 +112,7 @@ const formatProductTitle = (product, language = 'en') => {
 router.post('/', verifyToken, verifyDealer, async (req, res) => {
   try {
     const language = getLanguage(req);
-    const { productId, strips } = req.body;
+    const { productId, strips, orderGroupId } = req.body;
 
     if (!productId || !strips) {
       return res.status(400).json({ 
@@ -151,6 +151,7 @@ router.post('/', verifyToken, verifyDealer, async (req, res) => {
       product: productId,
       strips,
       status: 'pending',
+      orderGroupId: orderGroupId || null,
     });
 
     await request.save();

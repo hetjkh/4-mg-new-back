@@ -83,6 +83,12 @@ const dealerRequestSchema = new mongoose.Schema({
     default: null,
     comment: 'Admin who sent the bill',
   },
+  orderGroupId: {
+    type: String,
+    trim: true,
+    default: null,
+    comment: 'Group ID to group multiple requests submitted together (e.g., from cart)',
+  },
 }, {
   timestamps: true,
   toJSON: {

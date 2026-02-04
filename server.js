@@ -58,6 +58,7 @@ app.use('/api/sales', require('./routes/sales'));
 app.use('/api/messages', require('./routes/messages'));
 app.use('/api/shopkeepers', require('./routes/shopkeepers'));
 app.use('/api/dealer-documents', require('./routes/dealerDocuments'));
+app.use('/api/dealer-profile', require('./routes/dealerProfile'));
 
 // Health check
 app.get('/api/health', (req, res) => {

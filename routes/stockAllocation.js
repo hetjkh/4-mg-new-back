@@ -329,7 +329,82 @@ router.get('/dealer/allocations', verifyToken, verifyDealer, async (req, res) =>
   }
 });
 
-// Get Allocated Stock for Salesman (Salesman only - view their allocated stock)
+// Get Dealer Stock for Salesman (Salesman only - view their dealer's stock)
+router.get('/salesman/dealer-stock', verifyToken, verifySalesman, async (req, res) => {
+  try {
+    // Find the salesman's dealer (dealer is the one who created the salesman)
+    const salesman = await User.findById(req.user._id);
+    
+    if (!salesman || !salesman.createdBy) {
+      return res.status(404).json({
+        success: false,
+        message: 'Dealer not found for this salesman',
+      });
+    }
+
+    const dealerId = salesman.createdBy;
+    
+    // Get dealer info
+    const dealer = await User.findById(dealerId);
+    if (!dealer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Dealer not found',
+      });
+    }
+
+    // Get dealer's stock
+    const dealerStocks = await DealerStock.find({ dealer: dealerId })
+      .populate('product', 'title packetPrice packetsPerStrip image')
+      .populate('sourceRequest', 'strips requestedAt')
+      .sort({ createdAt: -1 });
+
+    // Group by product
+    const stockByProduct = {};
+    dealerStocks.forEach(stock => {
+      const productId = stock.product._id.toString();
+      if (!stockByProduct[productId]) {
+        stockByProduct[productId] = {
+          product: {
+            id: stock.product._id,
+            title: stock.product.title,
+            packetPrice: stock.product.packetPrice,
+            packetsPerStrip: stock.product.packetsPerStrip,
+            image: stock.product.image,
+          },
+          totalStrips: 0,
+          availableStrips: 0,
+        };
+      }
+      stockByProduct[productId].totalStrips += stock.totalStrips;
+      stockByProduct[productId].availableStrips += stock.availableStrips;
+    });
+
+    const stockList = Object.values(stockByProduct);
+
+    res.json({
+      success: true,
+      data: { 
+        stocks: stockList,
+        dealer: {
+          id: dealerId,
+          name: dealer.name,
+          email: dealer.email,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Get dealer stock for salesman error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error while fetching dealer stock',
+      error: error.message 
+    });
+  }
+});
+
+// Get Allocated Stock for Salesman (Salesman only - view their allocated stock) - DEPRECATED
+// Keeping for backward compatibility but salesman should use /salesman/dealer-stock instead
 router.get('/salesman/stock', verifyToken, verifySalesman, async (req, res) => {
   try {
     const allocations = await StockAllocation.find({ salesman: req.user._id })

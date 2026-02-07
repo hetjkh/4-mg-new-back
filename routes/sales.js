@@ -1517,10 +1517,24 @@ router.get('/bills/pending', verifyToken, verifyDealer, async (req, res) => {
       { path: 'sales.shopkeeper', select: 'name phone' },
     ]);
 
+    // Format product titles
+    const language = getLanguage(req);
+    const formattedBills = populatedBills.map(bill => ({
+      ...bill,
+      sales: bill.sales.map(sale => ({
+        ...sale,
+        product: sale.product ? {
+          ...sale.product,
+          id: sale.product._id || sale.product.id,
+          title: formatProductTitle(sale.product, language),
+        } : sale.product,
+      })),
+    }));
+
     res.json({
       success: true,
       data: {
-        bills: populatedBills,
+        bills: formattedBills,
       },
     });
   } catch (error) {
@@ -1566,10 +1580,24 @@ router.get('/bills/approved', verifyToken, verifyDealer, async (req, res) => {
       { path: 'sales.shopkeeper', select: 'name phone' },
     ]);
 
+    // Format product titles
+    const language = getLanguage(req);
+    const formattedBills = populatedBills.map(bill => ({
+      ...bill,
+      sales: bill.sales.map(sale => ({
+        ...sale,
+        product: sale.product ? {
+          ...sale.product,
+          id: sale.product._id || sale.product.id,
+          title: formatProductTitle(sale.product, language),
+        } : sale.product,
+      })),
+    }));
+
     res.json({
       success: true,
       data: {
-        bills: populatedBills,
+        bills: formattedBills,
       },
     });
   } catch (error) {

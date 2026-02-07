@@ -23,6 +23,22 @@ const upload = multer({
   },
 });
 
+// Configure multer for PDF uploads
+const uploadPDF = multer({
+  storage: storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit for PDFs
+  },
+  fileFilter: (req, file, cb) => {
+    // Accept PDF files
+    if (file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF files are allowed'), false);
+    }
+  },
+});
+
 // Middleware to verify token
 const verifyToken = async (req, res, next) => {
   try {
@@ -99,6 +115,52 @@ router.post('/image', verifyToken, upload.single('image'), async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to upload image',
+      error: error.message,
+    });
+  }
+});
+
+// Upload PDF to Cloudinary
+router.post('/pdf', verifyToken, uploadPDF.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No PDF file provided',
+      });
+    }
+
+    console.log('PDF file received:', {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+    });
+
+    // Convert buffer to base64 string for Cloudinary
+    const base64File = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+
+    // Upload to Cloudinary as raw file (PDF)
+    const result = await cloudinary.uploader.upload(base64File, {
+      folder: 'bills', // Organize PDFs in a 'bills' folder
+      resource_type: 'raw', // PDFs are raw files, not images
+    });
+
+    console.log('Cloudinary PDF upload successful:', result.secure_url);
+
+    res.json({
+      success: true,
+      message: 'PDF uploaded successfully',
+      data: {
+        url: result.secure_url,
+        imageUrl: result.secure_url, // Also include imageUrl for compatibility
+        publicId: result.public_id,
+      },
+    });
+  } catch (error) {
+    console.error('PDF upload error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to upload PDF',
       error: error.message,
     });
   }

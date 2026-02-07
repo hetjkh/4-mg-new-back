@@ -120,14 +120,14 @@ router.put('/my-profile', verifyToken, verifyDealer, async (req, res) => {
   }
 });
 
-// Get dealer profile by ID (Admin only - view any dealer's profile)
+// Get dealer profile by ID (Admin and Salesman - view any dealer's profile)
 router.get('/:dealerId', verifyToken, async (req, res) => {
   try {
-    // Check if user is admin
-    if (req.user.role !== 'admin') {
+    // Check if user is admin or salesman
+    if (req.user.role !== 'admin' && req.user.role !== 'salesman') {
       return res.status(403).json({
         success: false,
-        message: 'Only admins can view dealer profiles',
+        message: 'Only admins and salesmen can view dealer profiles',
       });
     }
 

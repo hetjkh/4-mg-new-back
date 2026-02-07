@@ -119,6 +119,30 @@ const saleSchema = new mongoose.Schema({
     default: 'completed',
     comment: 'Payment status',
   },
+  billStatus: {
+    type: String,
+    enum: ['pending', 'approved', 'rejected'],
+    default: 'pending',
+    index: true,
+    comment: 'Bill approval status (for bills created by salesman)',
+  },
+  billApprovedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+    comment: 'Dealer who approved/rejected the bill',
+  },
+  billApprovedAt: {
+    type: Date,
+    default: null,
+    comment: 'Date when bill was approved/rejected',
+  },
+  billRejectionReason: {
+    type: String,
+    trim: true,
+    default: '',
+    comment: 'Reason for bill rejection (if rejected)',
+  },
   notes: {
     type: String,
     trim: true,

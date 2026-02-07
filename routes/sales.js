@@ -730,6 +730,7 @@ router.post('/bill', verifyToken, verifySalesman, async (req, res) => {
         saleDate: saleDate ? new Date(saleDate) : new Date(),
         paymentMethod: paymentMethod || 'cash',
         paymentStatus: paymentStatus || 'completed',
+        billStatus: 'pending', // Bills need dealer approval
         notes: notes || '',
         createdBy: req.user._id,
       });
@@ -1477,6 +1478,151 @@ router.put('/commissions/:id/status', verifyToken, verifyDealer, async (req, res
       success: false, 
       message: 'Server error while updating commission status',
       error: error.message 
+    });
+  }
+});
+
+// ==================== BILL APPROVAL (DEALER) ====================
+
+// Get bills pending approval (Dealer only)
+router.get('/bills/pending', verifyToken, verifyDealer, async (req, res) => {
+  try {
+    const bills = await Sale.aggregate([
+      {
+        $match: {
+          dealer: new mongoose.Types.ObjectId(req.user._id),
+          invoiceNo: { $exists: true, $ne: '' },
+          billStatus: 'pending',
+        },
+      },
+      {
+        $group: {
+          _id: '$invoiceNo',
+          sales: { $push: '$$ROOT' },
+          totalAmount: { $sum: '$totalAmount' },
+          saleDate: { $first: '$saleDate' },
+          customerName: { $first: '$customerName' },
+          invoiceNo: { $first: '$invoiceNo' },
+        },
+      },
+      {
+        $sort: { saleDate: -1 },
+      },
+    ]);
+
+    // Populate references
+    const populatedBills = await Sale.populate(bills, [
+      { path: 'sales.salesman', select: 'name email' },
+      { path: 'sales.product', select: 'title packetPrice packetsPerStrip' },
+      { path: 'sales.shopkeeper', select: 'name phone' },
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        bills: populatedBills,
+      },
+    });
+  } catch (error) {
+    console.error('Get pending bills error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching pending bills',
+      error: error.message,
+    });
+  }
+});
+
+// Approve bill (Dealer only)
+router.put('/bills/:invoiceNo/approve', verifyToken, verifyDealer, async (req, res) => {
+  try {
+    const { invoiceNo } = req.params;
+
+    const sales = await Sale.find({
+      invoiceNo,
+      dealer: req.user._id,
+      billStatus: 'pending',
+    });
+
+    if (sales.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Bill not found or already processed',
+      });
+    }
+
+    // Update all sales in the bill
+    await Sale.updateMany(
+      { invoiceNo, dealer: req.user._id },
+      {
+        billStatus: 'approved',
+        billApprovedBy: req.user._id,
+        billApprovedAt: new Date(),
+      }
+    );
+
+    res.json({
+      success: true,
+      message: 'Bill approved successfully',
+      data: {
+        invoiceNo,
+        approvedCount: sales.length,
+      },
+    });
+  } catch (error) {
+    console.error('Approve bill error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while approving bill',
+      error: error.message,
+    });
+  }
+});
+
+// Reject bill (Dealer only)
+router.put('/bills/:invoiceNo/reject', verifyToken, verifyDealer, async (req, res) => {
+  try {
+    const { invoiceNo } = req.params;
+    const { reason } = req.body;
+
+    const sales = await Sale.find({
+      invoiceNo,
+      dealer: req.user._id,
+      billStatus: 'pending',
+    });
+
+    if (sales.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Bill not found or already processed',
+      });
+    }
+
+    // Update all sales in the bill
+    await Sale.updateMany(
+      { invoiceNo, dealer: req.user._id },
+      {
+        billStatus: 'rejected',
+        billApprovedBy: req.user._id,
+        billApprovedAt: new Date(),
+        billRejectionReason: reason || '',
+      }
+    );
+
+    res.json({
+      success: true,
+      message: 'Bill rejected successfully',
+      data: {
+        invoiceNo,
+        rejectedCount: sales.length,
+      },
+    });
+  } catch (error) {
+    console.error('Reject bill error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while rejecting bill',
+      error: error.message,
     });
   }
 });

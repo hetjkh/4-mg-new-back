@@ -123,6 +123,46 @@ router.put('/my-profile', verifyToken, verifyDealer, async (req, res) => {
 // Get dealer profile by ID (Admin and Salesman - view any dealer's profile)
 router.get('/:dealerId', verifyToken, async (req, res) => {
   try {
+    const { dealerId } = req.params;
+    
+    // Exclude 'my-profile' from this route - it should be handled by the /my-profile route
+    if (dealerId === 'my-profile') {
+      return res.status(404).json({
+        success: false,
+        message: 'Route not found',
+      });
+    }
+    
+    // Allow dealers to access their own profile by ID
+    if (req.user.role === 'dealer' || req.user.role === 'dellear') {
+      // Check if dealer is requesting their own profile
+      if (dealerId === req.user._id.toString()) {
+        let profile = await DealerProfile.findOne({ dealer: req.user._id })
+          .populate('dealer', 'name email');
+
+        if (!profile) {
+          profile = new DealerProfile({
+            dealer: req.user._id,
+            name: req.user.name,
+            personalEmail: req.user.email,
+          });
+          await profile.save();
+          await profile.populate('dealer', 'name email');
+        }
+
+        return res.json({
+          success: true,
+          data: profile,
+        });
+      } else {
+        // Dealer trying to access another dealer's profile - deny
+        return res.status(403).json({
+          success: false,
+          message: 'You can only access your own profile',
+        });
+      }
+    }
+    
     // Check if user is admin or salesman
     if (req.user.role !== 'admin' && req.user.role !== 'salesman') {
       return res.status(403).json({
@@ -130,8 +170,6 @@ router.get('/:dealerId', verifyToken, async (req, res) => {
         message: 'Only admins and salesmen can view dealer profiles',
       });
     }
-
-    const { dealerId } = req.params;
 
     const profile = await DealerProfile.findOne({ dealer: dealerId })
       .populate('dealer', 'name email');

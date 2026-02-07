@@ -1533,6 +1533,55 @@ router.get('/bills/pending', verifyToken, verifyDealer, async (req, res) => {
   }
 });
 
+// Get bills approved (Dealer only)
+router.get('/bills/approved', verifyToken, verifyDealer, async (req, res) => {
+  try {
+    const bills = await Sale.aggregate([
+      {
+        $match: {
+          dealer: new mongoose.Types.ObjectId(req.user._id),
+          invoiceNo: { $exists: true, $ne: '' },
+          billStatus: 'approved',
+        },
+      },
+      {
+        $group: {
+          _id: '$invoiceNo',
+          sales: { $push: '$$ROOT' },
+          totalAmount: { $sum: '$totalAmount' },
+          saleDate: { $first: '$saleDate' },
+          customerName: { $first: '$customerName' },
+          invoiceNo: { $first: '$invoiceNo' },
+        },
+      },
+      {
+        $sort: { saleDate: -1 },
+      },
+    ]);
+
+    // Populate references
+    const populatedBills = await Sale.populate(bills, [
+      { path: 'sales.salesman', select: 'name email' },
+      { path: 'sales.product', select: 'title packetPrice packetsPerStrip' },
+      { path: 'sales.shopkeeper', select: 'name phone' },
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        bills: populatedBills,
+      },
+    });
+  } catch (error) {
+    console.error('Get approved bills error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching approved bills',
+      error: error.message,
+    });
+  }
+});
+
 // Approve bill (Dealer only)
 router.put('/bills/:invoiceNo/approve', verifyToken, verifyDealer, async (req, res) => {
   try {

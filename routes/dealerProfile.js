@@ -136,7 +136,24 @@ router.get('/:dealerId', verifyToken, async (req, res) => {
     // Allow dealers to access their own profile by ID
     if (req.user.role === 'dealer' || req.user.role === 'dellear') {
       // Check if dealer is requesting their own profile
-      if (dealerId === req.user._id.toString()) {
+      // Use MongoDB ObjectId comparison for accurate matching
+      const mongoose = require('mongoose');
+      let isOwnProfile = false;
+      
+      try {
+        // Try string comparison first
+        if (String(dealerId) === String(req.user._id)) {
+          isOwnProfile = true;
+        } else if (mongoose.Types.ObjectId.isValid(dealerId) && mongoose.Types.ObjectId.isValid(req.user._id)) {
+          // Use MongoDB ObjectId.equals() for proper comparison
+          isOwnProfile = new mongoose.Types.ObjectId(dealerId).equals(new mongoose.Types.ObjectId(req.user._id));
+        }
+      } catch (error) {
+        console.error('Error comparing dealer IDs:', error);
+        isOwnProfile = false;
+      }
+      
+      if (isOwnProfile) {
         let profile = await DealerProfile.findOne({ dealer: req.user._id })
           .populate('dealer', 'name email');
 

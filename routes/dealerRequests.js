@@ -7,6 +7,7 @@ const User = require('../models/User');
 const AdminSettings = require('../models/AdminSettings');
 const DealerStock = require('../models/DealerStock');
 const StockAllocation = require('../models/StockAllocation');
+const Payment = require('../models/Payment');
 const multer = require('multer');
 const cloudinary = require('../config/cloudinary');
 const { getLanguage } = require('../middleware/translateMessages');
@@ -626,7 +627,7 @@ router.put('/:id/reject-payment', verifyToken, verifyAdmin, async (req, res) => 
   }
 });
 
-// Approve Request (Admin only - only after payment is verified)
+// Approve Request (Admin only - can approve with or without payment)
 router.put('/:id/approve', verifyToken, verifyAdmin, async (req, res) => {
   try {
     // Validate ObjectId format
@@ -654,19 +655,26 @@ router.put('/:id/approve', verifyToken, verifyAdmin, async (req, res) => {
       });
     }
 
-    // Check if payment is verified
-    if (request.paymentStatus !== 'verified') {
-      return res.status(400).json({ 
-        success: false, 
-        message: `Cannot approve request. Payment status is ${request.paymentStatus}. Payment must be verified first.` 
-      });
-    }
-
     // Check stock availability
     if (request.product.stock < request.strips) {
       return res.status(400).json({ 
         success: false, 
         message: 'Insufficient stock to approve this request' 
+      });
+    }
+
+    // Calculate total amount
+    const totalAmount = request.strips * request.product.packetsPerStrip * request.product.packetPrice;
+    
+    // Get payment details from request body
+    const paidAmount = req.body.paidAmount ? parseFloat(req.body.paidAmount) : 0;
+    const paymentType = req.body.paymentType || (paidAmount === 0 ? 'none' : (paidAmount >= totalAmount ? 'full' : 'partial'));
+    
+    // Validate paid amount
+    if (paidAmount < 0 || paidAmount > totalAmount) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Paid amount must be between 0 and ${totalAmount}` 
       });
     }
 
@@ -679,7 +687,58 @@ router.put('/:id/approve', verifyToken, verifyAdmin, async (req, res) => {
     request.processedBy = req.user._id;
     request.processedAt = new Date();
     request.notes = req.body.notes || '';
+    request.totalAmount = totalAmount;
+    request.paidAmount = paidAmount;
+    request.paymentType = paymentType;
+    request.isOutstanding = paidAmount < totalAmount;
+    
+    // If payment is not verified but admin is approving, mark payment status accordingly
+    if (request.paymentStatus !== 'verified') {
+      if (paidAmount > 0) {
+        request.paymentStatus = 'paid'; // Mark as paid if amount is provided
+      } else {
+        request.paymentStatus = 'pending'; // Keep as pending if no payment
+      }
+    }
+    
     await request.save();
+
+    // Create Payment record if there's outstanding amount (approved without full payment)
+    if (request.isOutstanding && paidAmount < totalAmount) {
+      const outstandingAmount = totalAmount - paidAmount;
+      
+      // Create payment record for outstanding amount
+      const outstandingPayment = new Payment({
+        dealer: request.dealer._id,
+        dealerRequest: request._id,
+        type: 'payment',
+        amount: outstandingAmount,
+        paymentMethod: 'credit', // Mark as credit since it's outstanding
+        status: 'pending', // Outstanding payments are pending
+        notes: `Outstanding amount for approved request. Paid: ₹${paidAmount}, Total: ₹${totalAmount}`,
+        processedBy: req.user._id,
+        processedAt: new Date(),
+        transactionDate: new Date(),
+      });
+      await outstandingPayment.save();
+    }
+
+    // Create Payment record for paid amount if any
+    if (paidAmount > 0) {
+      const paidPayment = new Payment({
+        dealer: request.dealer._id,
+        dealerRequest: request._id,
+        type: 'payment',
+        amount: paidAmount,
+        paymentMethod: req.body.paymentMethod || 'cash',
+        status: 'completed', // Paid amount is considered completed
+        notes: req.body.paymentNotes || `Partial payment for approved request. Total: ₹${totalAmount}`,
+        processedBy: req.user._id,
+        processedAt: new Date(),
+        transactionDate: new Date(),
+      });
+      await paidPayment.save();
+    }
 
     // Create or update dealer stock
     let dealerStock = await DealerStock.findOne({

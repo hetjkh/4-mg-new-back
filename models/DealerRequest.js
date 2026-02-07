@@ -49,6 +49,27 @@ const dealerRequestSchema = new mongoose.Schema({
     default: '',
     comment: 'Admin notes about payment verification',
   },
+  totalAmount: {
+    type: Number,
+    default: null,
+    comment: 'Total amount for this request (strips * packetsPerStrip * packetPrice)',
+  },
+  paidAmount: {
+    type: Number,
+    default: 0,
+    comment: 'Amount paid by dealer (for partial payments)',
+  },
+  paymentType: {
+    type: String,
+    enum: ['full', 'partial', 'none'],
+    default: 'none',
+    comment: 'Payment type: full (fully paid), partial (partially paid), none (not paid)',
+  },
+  isOutstanding: {
+    type: Boolean,
+    default: false,
+    comment: 'Whether this request has outstanding payment (approved without full payment)',
+  },
   requestedAt: {
     type: Date,
     default: Date.now,

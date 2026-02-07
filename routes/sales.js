@@ -1656,16 +1656,16 @@ router.put('/bills/:invoiceNo/approve', verifyToken, verifyDealer, async (req, r
   }
 });
 
-// Save bill PDF URL and name type (Salesman only)
+// Save bill name type choice (Salesman only)
 router.put('/bills/:invoiceNo/save-pdf', verifyToken, async (req, res) => {
   try {
     const { invoiceNo } = req.params;
-    const { pdfUrl, nameType } = req.body;
+    const { nameType } = req.body;
 
-    if (!pdfUrl) {
+    if (!nameType || (nameType !== 'company' && nameType !== 'personal')) {
       return res.status(400).json({
         success: false,
-        message: 'PDF URL is required',
+        message: 'Name type (company or personal) is required',
       });
     }
 
@@ -1682,28 +1682,28 @@ router.put('/bills/:invoiceNo/save-pdf', verifyToken, async (req, res) => {
       });
     }
 
-    // Update all sales in the bill with PDF URL and name type
+    // Update all sales in the bill with name type choice
     await Sale.updateMany(
       { invoiceNo, salesman: req.user._id },
       {
-        billPdfUrl: pdfUrl,
-        billNameType: nameType || null,
+        billNameType: nameType,
       }
     );
 
     res.json({
       success: true,
-      message: 'Bill PDF saved successfully',
+      message: 'Bill name type saved successfully',
       data: {
         invoiceNo,
         updatedCount: sales.length,
+        nameType,
       },
     });
   } catch (error) {
-    console.error('Save bill PDF error:', error);
+    console.error('Save bill name type error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error while saving bill PDF',
+      message: 'Server error while saving bill name type',
       error: error.message,
     });
   }

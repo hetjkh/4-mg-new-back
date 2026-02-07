@@ -143,6 +143,18 @@ const saleSchema = new mongoose.Schema({
     default: '',
     comment: 'Reason for bill rejection (if rejected)',
   },
+  billPdfUrl: {
+    type: String,
+    trim: true,
+    default: '',
+    comment: 'URL of the generated PDF bill (stored when salesman generates it)',
+  },
+  billNameType: {
+    type: String,
+    enum: ['company', 'personal', null],
+    default: null,
+    comment: 'Name type used for bill generation (company or personal, only for dealer bills)',
+  },
   notes: {
     type: String,
     trim: true,

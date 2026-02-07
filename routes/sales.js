@@ -1656,6 +1656,59 @@ router.put('/bills/:invoiceNo/approve', verifyToken, verifyDealer, async (req, r
   }
 });
 
+// Save bill PDF URL and name type (Salesman only)
+router.put('/bills/:invoiceNo/save-pdf', verifyToken, async (req, res) => {
+  try {
+    const { invoiceNo } = req.params;
+    const { pdfUrl, nameType } = req.body;
+
+    if (!pdfUrl) {
+      return res.status(400).json({
+        success: false,
+        message: 'PDF URL is required',
+      });
+    }
+
+    // Verify that the salesman created this bill
+    const sales = await Sale.find({
+      invoiceNo,
+      salesman: req.user._id,
+    });
+
+    if (sales.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Bill not found or you do not have permission',
+      });
+    }
+
+    // Update all sales in the bill with PDF URL and name type
+    await Sale.updateMany(
+      { invoiceNo, salesman: req.user._id },
+      {
+        billPdfUrl: pdfUrl,
+        billNameType: nameType || null,
+      }
+    );
+
+    res.json({
+      success: true,
+      message: 'Bill PDF saved successfully',
+      data: {
+        invoiceNo,
+        updatedCount: sales.length,
+      },
+    });
+  } catch (error) {
+    console.error('Save bill PDF error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while saving bill PDF',
+      error: error.message,
+    });
+  }
+});
+
 // Reject bill (Dealer only)
 router.put('/bills/:invoiceNo/reject', verifyToken, verifyDealer, async (req, res) => {
   try {

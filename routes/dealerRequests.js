@@ -843,7 +843,28 @@ router.put('/:id/send-bill', verifyToken, verifyAdmin, async (req, res) => {
       });
     }
 
-    // Mark bill as sent
+    // Get bill details from request body
+    const { destination, vehicleNumber, dispatchedDocNo } = req.body;
+
+    // Validate required fields
+    if (!destination || !destination.trim()) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Destination is required' 
+      });
+    }
+
+    if (!vehicleNumber || !vehicleNumber.trim()) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Vehicle number is required' 
+      });
+    }
+
+    // Save bill details and mark bill as sent
+    request.destination = destination.trim();
+    request.vehicleNumber = vehicleNumber.trim();
+    request.dispatchedDocNo = dispatchedDocNo ? dispatchedDocNo.trim() : null;
     request.billSent = true;
     request.billSentAt = new Date();
     request.billSentBy = req.user._id;
@@ -1245,10 +1266,11 @@ router.get('/:id/bill', verifyToken, verifyAdmin, async (req, res) => {
     doc.text('Dispatched through:', rightColLabelX, invoiceDetailsY);
     doc.text('Dispatched Document No.:', rightColLabelX, invoiceDetailsY + lineHeight);
     
-    // Right Column Values
+    // Right Column Values - Use saved values or defaults
     doc.font('Helvetica-Bold');
-    doc.text('company vehicle', rightColValueX, invoiceDetailsY);
-    const dispatchDocNo = `GJ-${String(invoiceDate.getDate()).padStart(2, '0')}-TT-${String(request._id.toString().slice(-4))}`;
+    const vehicleInfo = request.vehicleNumber ? `Vehicle No.: ${request.vehicleNumber}` : 'company vehicle';
+    doc.text(vehicleInfo, rightColValueX, invoiceDetailsY);
+    const dispatchDocNo = request.dispatchedDocNo || `GJ-${String(invoiceDate.getDate()).padStart(2, '0')}-TT-${String(request._id.toString().slice(-4))}`;
     doc.text(dispatchDocNo, rightColValueX, invoiceDetailsY + lineHeight);
     
     // ========== BUYER INFORMATION SECTION (MID-LEFT) - Box Structure ==========
@@ -1272,7 +1294,8 @@ router.get('/:id/bill', verifyToken, verifyAdmin, async (req, res) => {
     
     doc.fontSize(10).font('Helvetica-Bold').text('Destination:', rightSectionX + 5, destinationY + 5);
     doc.font('Helvetica');
-    doc.text(buyerAddress, rightSectionX + 5, destinationY + 23, { width: 220 });
+    const finalDestination = request.destination || buyerAddress;
+    doc.text(finalDestination, rightSectionX + 5, destinationY + 23, { width: 220 });
     
     // ========== PAYMENT TERMS SECTION - Box Structure ==========
     y = 255; // Increased spacing

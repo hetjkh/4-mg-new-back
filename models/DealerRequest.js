@@ -110,6 +110,24 @@ const dealerRequestSchema = new mongoose.Schema({
     default: null,
     comment: 'Group ID to group multiple requests submitted together (e.g., from cart)',
   },
+  destination: {
+    type: String,
+    trim: true,
+    default: null,
+    comment: 'Destination address for bill dispatch',
+  },
+  vehicleNumber: {
+    type: String,
+    trim: true,
+    default: null,
+    comment: 'Vehicle number used for dispatch',
+  },
+  dispatchedDocNo: {
+    type: String,
+    trim: true,
+    default: null,
+    comment: 'Dispatched document number',
+  },
 }, {
   timestamps: true,
   toJSON: {

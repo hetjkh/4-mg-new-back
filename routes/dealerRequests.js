@@ -844,7 +844,7 @@ router.put('/:id/send-bill', verifyToken, verifyAdmin, async (req, res) => {
     }
 
     // Get bill details from request body
-    const { destination, vehicleNumber, dispatchedDocNo } = req.body;
+    const { destination, vehicleNumber, dispatchedDocNo, invoiceSnapshot } = req.body;
 
     // Validate required fields
     if (!destination || !destination.trim()) {
@@ -868,6 +868,12 @@ router.put('/:id/send-bill', verifyToken, verifyAdmin, async (req, res) => {
     request.billSent = true;
     request.billSentAt = new Date();
     request.billSentBy = req.user._id;
+    
+    // Store invoice snapshot if provided (for historical accuracy)
+    if (invoiceSnapshot) {
+      request.invoiceSnapshot = invoiceSnapshot;
+    }
+    
     await request.save();
 
     await request.populate('product', 'title packetPrice packetsPerStrip image');

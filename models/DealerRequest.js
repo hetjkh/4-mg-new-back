@@ -156,6 +156,11 @@ const dealerRequestSchema = new mongoose.Schema({
     default: 'not_generated',
     comment: 'E-Way Bill status',
   },
+  invoiceSnapshot: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null,
+    comment: 'Invoice snapshot stored when bill is sent - preserves historical invoice data for accuracy',
+  },
 }, {
   timestamps: true,
   toJSON: {

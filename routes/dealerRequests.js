@@ -814,6 +814,153 @@ router.put('/:id/approve', verifyToken, verifyAdmin, async (req, res) => {
   }
 });
 
+// Send Bill to Dealer for Grouped Orders (Admin only) - Updates all requests in the group
+router.put('/:id/send-bill/grouped', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { requestIds, destination, vehicleNumber, dispatchedDocNo, invoiceSnapshot } = req.body;
+
+    // Validate ObjectId format for the first ID
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid request ID format' 
+      });
+    }
+
+    // Validate requestIds array
+    if (!requestIds || !Array.isArray(requestIds) || requestIds.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Request IDs array is required' 
+      });
+    }
+
+    // Validate all request IDs
+    const invalidIds = requestIds.filter(reqId => !mongoose.Types.ObjectId.isValid(reqId));
+    if (invalidIds.length > 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Invalid request ID format: ${invalidIds.join(', ')}` 
+      });
+    }
+
+    // Validate required fields
+    if (!destination || !destination.trim()) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Destination is required' 
+      });
+    }
+
+    if (!vehicleNumber || !vehicleNumber.trim()) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Vehicle number is required' 
+      });
+    }
+
+    // Find all requests in the group
+    const requests = await DealerRequest.find({ _id: { $in: requestIds } })
+      .populate('product', 'title packetPrice packetsPerStrip image')
+      .populate('dealer', 'name email');
+
+    if (requests.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'No requests found' 
+      });
+    }
+
+    if (requests.length !== requestIds.length) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Some requests not found' 
+      });
+    }
+
+    // Verify all requests are approved
+    const unapprovedRequests = requests.filter(r => r.status !== 'approved');
+    if (unapprovedRequests.length > 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Cannot send bill. Some requests are not approved: ${unapprovedRequests.map(r => r._id).join(', ')}` 
+      });
+    }
+
+    // Update all requests in the group with the same bill details and snapshot
+    const updatePromises = requests.map(request => {
+      request.destination = destination.trim();
+      request.vehicleNumber = vehicleNumber.trim();
+      request.dispatchedDocNo = dispatchedDocNo ? dispatchedDocNo.trim() : null;
+      request.billSent = true;
+      request.billSentAt = new Date();
+      request.billSentBy = req.user._id;
+      
+      // Store the same invoice snapshot on all requests in the group
+      if (invoiceSnapshot) {
+        request.invoiceSnapshot = invoiceSnapshot;
+      }
+      
+      return request.save();
+    });
+
+    await Promise.all(updatePromises);
+
+    // Populate all requests for response
+    await Promise.all(requests.map(r => 
+      r.populate('product', 'title packetPrice packetsPerStrip image')
+        .then(() => r.populate('dealer', 'name email'))
+        .then(() => r.populate('processedBy', 'name email'))
+        .then(() => r.populate('paymentVerifiedBy', 'name email'))
+        .then(() => r.populate('billSentBy', 'name email'))
+    ));
+
+    const language = getLanguage(req);
+    const transformedRequests = requests.map(request => {
+      const requestObj = request.toObject ? request.toObject() : request;
+      return {
+        ...requestObj,
+        id: requestObj._id || requestObj.id,
+        dealer: requestObj.dealer ? {
+          ...requestObj.dealer,
+          id: requestObj.dealer._id || requestObj.dealer.id,
+        } : requestObj.dealer,
+        product: requestObj.product ? {
+          ...requestObj.product,
+          id: requestObj.product._id || requestObj.product.id,
+          title: formatProductTitle(requestObj.product, language),
+        } : requestObj.product,
+        processedBy: requestObj.processedBy ? {
+          ...requestObj.processedBy,
+          id: requestObj.processedBy._id || requestObj.processedBy.id,
+        } : requestObj.processedBy,
+        paymentVerifiedBy: requestObj.paymentVerifiedBy ? {
+          ...requestObj.paymentVerifiedBy,
+          id: requestObj.paymentVerifiedBy._id || requestObj.paymentVerifiedBy.id,
+        } : requestObj.paymentVerifiedBy,
+        billSentBy: requestObj.billSentBy ? {
+          ...requestObj.billSentBy,
+          id: requestObj.billSentBy._id || requestObj.billSentBy.id,
+        } : requestObj.billSentBy,
+      };
+    });
+
+    res.json({
+      success: true,
+      message: `Bill sent to dealer successfully for ${requests.length} request(s)`,
+      data: { requests: transformedRequests },
+    });
+  } catch (error) {
+    console.error('Send grouped bill error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message || 'Server error while sending grouped bill',
+      error: error.message 
+    });
+  }
+});
+
 // Send Bill to Dealer (Admin only)
 router.put('/:id/send-bill', verifyToken, verifyAdmin, async (req, res) => {
   try {

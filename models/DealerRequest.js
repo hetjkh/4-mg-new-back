@@ -128,6 +128,34 @@ const dealerRequestSchema = new mongoose.Schema({
     default: null,
     comment: 'Dispatched document number',
   },
+  ewayBillNo: {
+    type: String,
+    trim: true,
+    default: null,
+    comment: 'E-Way Bill number generated for this request',
+  },
+  ewayBillDate: {
+    type: Date,
+    default: null,
+    comment: 'Date when e-way bill was generated',
+  },
+  ewayBillValidUpto: {
+    type: Date,
+    default: null,
+    comment: 'E-Way Bill validity date',
+  },
+  ewayBillGeneratedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+    comment: 'Admin who generated the e-way bill',
+  },
+  ewayBillStatus: {
+    type: String,
+    enum: ['not_generated', 'active', 'cancelled', 'expired'],
+    default: 'not_generated',
+    comment: 'E-Way Bill status',
+  },
 }, {
   timestamps: true,
   toJSON: {

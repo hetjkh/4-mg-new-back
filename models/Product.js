@@ -14,6 +14,17 @@ const productSchema = new mongoose.Schema({
     required: [true, 'Packet price is required'],
     min: [0, 'Price must be positive'],
   },
+  // Immutable "original" packet price captured at product creation time.
+  // Used for invoice display (historical/base rate reference).
+  initialPacketPrice: {
+    type: Number,
+    // NOTE: do not mark required to avoid breaking saves for legacy products
+    // that were created before this field existed.
+    min: [0, 'Price must be positive'],
+    default: function () {
+      return this.packetPrice;
+    },
+  },
   packetsPerStrip: {
     type: Number,
     required: [true, 'Packets per strip is required'],
@@ -38,6 +49,14 @@ const productSchema = new mongoose.Schema({
   },
 }, {
   timestamps: true,
+});
+
+// Backfill initialPacketPrice for legacy docs on any save/validate.
+productSchema.pre('validate', function (next) {
+  if (this.initialPacketPrice === undefined || this.initialPacketPrice === null) {
+    this.initialPacketPrice = this.packetPrice;
+  }
+  next();
 });
 
 module.exports = mongoose.model('Product', productSchema);

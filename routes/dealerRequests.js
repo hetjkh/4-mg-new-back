@@ -156,7 +156,7 @@ router.post('/', verifyToken, verifyDealer, async (req, res) => {
     });
 
     await request.save();
-    await request.populate('product', 'title packetPrice packetsPerStrip image');
+    await request.populate('product', 'title packetPrice initialPacketPrice packetsPerStrip image');
     await request.populate('dealer', 'name email');
 
     // Transform request to ensure all IDs are properly mapped and format product titles
@@ -206,7 +206,7 @@ router.get('/', verifyToken, async (req, res) => {
     }
 
     const requests = await DealerRequest.find(query)
-      .populate('product', 'title packetPrice packetsPerStrip image stock')
+      .populate('product', 'title packetPrice initialPacketPrice packetsPerStrip image stock')
       .populate('dealer', 'name email')
       .populate('processedBy', 'name email')
       .populate('paymentVerifiedBy', 'name email')
@@ -322,7 +322,7 @@ router.get('/:id', verifyToken, async (req, res) => {
     }
 
     const request = await DealerRequest.findById(req.params.id)
-      .populate('product', 'title packetPrice packetsPerStrip image stock')
+      .populate('product', 'title packetPrice initialPacketPrice packetsPerStrip image stock')
       .populate('dealer', 'name email')
       .populate('processedBy', 'name email')
       .populate('paymentVerifiedBy', 'name email')
@@ -444,7 +444,7 @@ router.put('/:id/upload-receipt', verifyToken, verifyDealer, upload.single('rece
     request.paymentStatus = 'paid'; // Changed from 'pending' to 'paid'
     await request.save();
 
-    await request.populate('product', 'title packetPrice packetsPerStrip image');
+    await request.populate('product', 'title packetPrice initialPacketPrice packetsPerStrip image');
     await request.populate('dealer', 'name email');
 
     const language = getLanguage(req);
@@ -513,7 +513,7 @@ router.put('/:id/verify-payment', verifyToken, verifyAdmin, async (req, res) => 
     request.paymentNotes = req.body.notes || '';
     await request.save();
 
-    await request.populate('product', 'title packetPrice packetsPerStrip image');
+    await request.populate('product', 'title packetPrice initialPacketPrice packetsPerStrip image');
     await request.populate('dealer', 'name email');
     await request.populate('paymentVerifiedBy', 'name email');
 
@@ -588,7 +588,7 @@ router.put('/:id/reject-payment', verifyToken, verifyAdmin, async (req, res) => 
     request.receiptImage = null;
     await request.save();
 
-    await request.populate('product', 'title packetPrice packetsPerStrip image');
+    await request.populate('product', 'title packetPrice initialPacketPrice packetsPerStrip image');
     await request.populate('dealer', 'name email');
     await request.populate('paymentVerifiedBy', 'name email');
 
@@ -765,7 +765,7 @@ router.put('/:id/approve', verifyToken, verifyAdmin, async (req, res) => {
       await dealerStock.save();
     }
 
-    await request.populate('product', 'title packetPrice packetsPerStrip image');
+    await request.populate('product', 'title packetPrice initialPacketPrice packetsPerStrip image');
     await request.populate('dealer', 'name email');
     await request.populate('processedBy', 'name email');
     await request.populate('paymentVerifiedBy', 'name email');
@@ -862,7 +862,7 @@ router.put('/:id/send-bill/grouped', verifyToken, verifyAdmin, async (req, res) 
 
     // Find all requests in the group
     const requests = await DealerRequest.find({ _id: { $in: requestIds } })
-      .populate('product', 'title packetPrice packetsPerStrip image')
+      .populate('product', 'title packetPrice initialPacketPrice packetsPerStrip image')
       .populate('dealer', 'name email');
 
     if (requests.length === 0) {
@@ -909,7 +909,7 @@ router.put('/:id/send-bill/grouped', verifyToken, verifyAdmin, async (req, res) 
 
     // Populate all requests for response
     await Promise.all(requests.map(r => 
-      r.populate('product', 'title packetPrice packetsPerStrip image')
+      r.populate('product', 'title packetPrice initialPacketPrice packetsPerStrip image')
         .then(() => r.populate('dealer', 'name email'))
         .then(() => r.populate('processedBy', 'name email'))
         .then(() => r.populate('paymentVerifiedBy', 'name email'))
@@ -973,7 +973,7 @@ router.put('/:id/send-bill', verifyToken, verifyAdmin, async (req, res) => {
     }
 
     const request = await DealerRequest.findById(req.params.id)
-      .populate('product', 'title packetPrice packetsPerStrip image')
+      .populate('product', 'title packetPrice initialPacketPrice packetsPerStrip image')
       .populate('dealer', 'name email');
 
     if (!request) {
@@ -1023,7 +1023,7 @@ router.put('/:id/send-bill', verifyToken, verifyAdmin, async (req, res) => {
     
     await request.save();
 
-    await request.populate('product', 'title packetPrice packetsPerStrip image');
+    await request.populate('product', 'title packetPrice initialPacketPrice packetsPerStrip image');
     await request.populate('dealer', 'name email');
     await request.populate('processedBy', 'name email');
     await request.populate('paymentVerifiedBy', 'name email');
@@ -1106,7 +1106,7 @@ router.put('/:id/cancel', verifyToken, verifyAdmin, async (req, res) => {
     request.notes = req.body.notes || '';
     await request.save();
 
-    await request.populate('product', 'title packetPrice packetsPerStrip image');
+    await request.populate('product', 'title packetPrice initialPacketPrice packetsPerStrip image');
     await request.populate('dealer', 'name email');
     await request.populate('processedBy', 'name email');
 
@@ -1167,7 +1167,7 @@ router.get('/dealer/:dealerId/stats', verifyToken, verifyStalkist, async (req, r
 
     // Get all requests for this dealer
     const requests = await DealerRequest.find({ dealer: dealerId })
-      .populate('product', 'title packetPrice packetsPerStrip');
+      .populate('product', 'title packetPrice initialPacketPrice packetsPerStrip');
 
     // Calculate statistics
     const totalRequests = requests.length;
@@ -1305,7 +1305,7 @@ router.get('/:id/bill', verifyToken, verifyAdmin, async (req, res) => {
     }
 
     const request = await DealerRequest.findById(req.params.id)
-      .populate('product', 'title packetPrice packetsPerStrip image')
+      .populate('product', 'title packetPrice initialPacketPrice packetsPerStrip image')
       .populate('dealer', 'name email')
       .populate('processedBy', 'name email');
 
@@ -1632,7 +1632,7 @@ router.post('/:id/ewaybill', verifyToken, verifyAdmin, async (req, res) => {
     const { id } = req.params;
     const request = await DealerRequest.findById(id)
       .populate('dealer', 'name email')
-      .populate('product', 'title packetPrice packetsPerStrip');
+      .populate('product', 'title packetPrice initialPacketPrice packetsPerStrip');
 
     if (!request) {
       return res.status(404).json({

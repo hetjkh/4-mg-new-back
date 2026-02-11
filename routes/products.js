@@ -65,6 +65,7 @@ const formatProduct = (product, language = 'en') => {
     title,
     description,
     packetPrice: product.packetPrice,
+    initialPacketPrice: product.initialPacketPrice ?? product.packetPrice,
     packetsPerStrip: product.packetsPerStrip,
     image: product.image,
     stock: product.stock,
@@ -121,6 +122,7 @@ router.post('/', verifyToken, verifyAdmin, async (req, res) => {
         gu: descriptionGu?.trim() || (typeof description === 'object' && description.gu ? description.gu : ''),
       },
       packetPrice,
+      initialPacketPrice: packetPrice,
       packetsPerStrip,
       image: image.trim(),
       stock,
@@ -262,6 +264,10 @@ router.put('/:id', verifyToken, verifyAdmin, async (req, res) => {
           success: false, 
           message: translateMessage(req, 'product.priceInvalid', 'Packet price must be a positive number')
         });
+      }
+      // Backfill initialPacketPrice for legacy products (only if missing).
+      if (product.initialPacketPrice === undefined || product.initialPacketPrice === null) {
+        product.initialPacketPrice = typeof product.packetPrice === 'number' ? product.packetPrice : packetPrice;
       }
       product.packetPrice = packetPrice;
     }

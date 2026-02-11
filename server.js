@@ -6,7 +6,30 @@ require('dotenv').config();
 const app = express();
 
 // Middleware
-app.use(cors());
+// CORS:
+// - React Native often sends no `Origin` header (origin is undefined) -> allow it
+// - Electron renderer can be `http://localhost:*` in dev, or `null` / `file://` in prod -> allow it
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow non-browser clients (RN, curl, Postman)
+    if (!origin) return callback(null, true);
+
+    // Electron packaged apps can appear as "null" origin
+    if (origin === 'null') return callback(null, true);
+
+    // Allow localhost dev servers (Vite, Expo web, etc.)
+    if (/^https?:\/\/localhost:\d+$/.test(origin)) return callback(null, true);
+    if (/^https?:\/\/127\.0\.0\.1:\d+$/.test(origin)) return callback(null, true);
+
+    // If you later host a web dashboard, add it here.
+    return callback(null, true);
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept-Language'],
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json());
 
 // MongoDB Connection

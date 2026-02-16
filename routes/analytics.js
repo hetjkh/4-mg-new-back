@@ -7,6 +7,7 @@ const StockAllocation = require('../models/StockAllocation');
 const LocationAllocation = require('../models/LocationAllocation');
 const Product = require('../models/Product');
 const User = require('../models/User');
+const Sale = require('../models/Sale');
 const { getLanguage } = require('../middleware/translateMessages');
 
 const router = express.Router();
@@ -177,7 +178,7 @@ router.get('/products', verifyToken, verifyAdmin, async (req, res) => {
     const { startDate, endDate } = getDateRange(period);
     const language = getLanguage(req);
 
-    // Get all approved requests
+    // Get all approved requests (Admin → Dealer)
     const requests = await DealerRequest.find({
       status: 'approved',
       processedAt: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
@@ -185,9 +186,19 @@ router.get('/products', verifyToken, verifyAdmin, async (req, res) => {
     .populate('product', 'title packetPrice packetsPerStrip image stock')
     .populate('dealer', 'name email');
 
+    // Get approved sales (Salesman → Shopkeeper → Dealer Approved)
+    const approvedSales = await Sale.find({
+      billStatus: 'approved',
+      saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
+    })
+    .populate('product', 'title packetPrice packetsPerStrip image stock')
+    .populate('dealer', 'name email')
+    .populate('salesman', 'name email');
+
     // Aggregate by product
     const productStats = {};
 
+    // Process dealer requests (Admin → Dealer)
     requests.forEach(request => {
       const productId = request.product._id.toString();
       const revenue = request.strips * request.product.packetsPerStrip * request.product.packetPrice;
@@ -205,7 +216,9 @@ router.get('/products', verifyToken, verifyAdmin, async (req, res) => {
           totalRevenue: 0,
           totalStrips: 0,
           totalRequests: 0,
+          totalSales: 0,
           uniqueDealers: new Set(),
+          uniqueSalesmen: new Set(),
         };
       }
 
@@ -215,12 +228,45 @@ router.get('/products', verifyToken, verifyAdmin, async (req, res) => {
       productStats[productId].uniqueDealers.add(request.dealer._id.toString());
     });
 
+    // Process approved sales (Salesman → Shopkeeper)
+    approvedSales.forEach(sale => {
+      const productId = sale.product._id.toString();
+      const saleRevenue = sale.totalAmount; // Actual sale amount
+
+      if (!productStats[productId]) {
+        productStats[productId] = {
+          product: {
+            id: productId,
+            title: formatProductTitle(sale.product, language),
+            packetPrice: sale.product.packetPrice,
+            packetsPerStrip: sale.product.packetsPerStrip,
+            image: sale.product.image,
+            stock: sale.product.stock,
+          },
+          totalRevenue: 0,
+          totalStrips: 0,
+          totalRequests: 0,
+          totalSales: 0,
+          uniqueDealers: new Set(),
+          uniqueSalesmen: new Set(),
+        };
+      }
+
+      productStats[productId].totalRevenue += saleRevenue;
+      productStats[productId].totalStrips += sale.strips;
+      productStats[productId].totalSales += 1;
+      productStats[productId].uniqueDealers.add(sale.dealer._id.toString());
+      productStats[productId].uniqueSalesmen.add(sale.salesman._id.toString());
+    });
+
     // Convert to array and calculate metrics
     let products = Object.values(productStats).map(stat => ({
       ...stat,
       uniqueDealers: stat.uniqueDealers.size,
+      uniqueSalesmen: stat.uniqueSalesmen ? stat.uniqueSalesmen.size : 0,
       averageOrderValue: stat.totalRequests > 0 ? stat.totalRevenue / stat.totalRequests : 0,
       averageStripsPerOrder: stat.totalRequests > 0 ? stat.totalStrips / stat.totalRequests : 0,
+      averageSaleValue: stat.totalSales > 0 ? stat.totalRevenue / stat.totalSales : 0,
     }));
 
     // Sort products
@@ -433,8 +479,11 @@ router.get('/salesmen', verifyToken, verifyAdmin, async (req, res) => {
     const { dealerId, period = 'all' } = req.query;
     const { startDate, endDate } = getDateRange(period);
 
-    // Build query
-    const query = {};
+    // Build query for sales
+    const salesQuery = {
+      billStatus: 'approved', // Only track approved bills (dealer approved)
+      saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
+    };
     if (dealerId) {
       const dealer = await User.findById(dealerId);
       if (!dealer) {
@@ -443,26 +492,73 @@ router.get('/salesmen', verifyToken, verifyAdmin, async (req, res) => {
           message: 'Dealer not found' 
         });
       }
-      query.dealer = dealerId;
+      salesQuery.dealer = dealerId;
     }
 
-    // Get stock allocations
-    const allocations = await StockAllocation.find({
-      ...query,
-      createdAt: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
-    })
-    .populate('salesman', 'name email')
-    .populate('dealer', 'name email')
-    .populate('product', 'title packetPrice packetsPerStrip')
-    .sort({ createdAt: -1 });
+    // Get approved sales (bills) - this is the actual sales flow: Salesman → Shopkeeper → Dealer Approved
+    const approvedSales = await Sale.find(salesQuery)
+      .populate('salesman', 'name email')
+      .populate('dealer', 'name email')
+      .populate('product', 'title packetPrice packetsPerStrip')
+      .populate('shopkeeper', 'name phone')
+      .sort({ saleDate: -1 });
 
     // Aggregate by salesman
     const salesmanStats = {};
 
+    approvedSales.forEach(sale => {
+      const salesmanId = sale.salesman._id.toString();
+      const saleValue = sale.totalAmount; // Use actual sale amount
+
+      if (!salesmanStats[salesmanId]) {
+        salesmanStats[salesmanId] = {
+          salesman: {
+            id: salesmanId,
+            name: sale.salesman.name,
+            email: sale.salesman.email,
+          },
+          dealer: {
+            id: sale.dealer._id.toString(),
+            name: sale.dealer.name,
+            email: sale.dealer.email,
+          },
+          totalStrips: 0,
+          totalValue: 0,
+          totalAllocations: 0,
+          totalSales: 0,
+          totalBills: new Set(),
+          products: new Set(),
+          shopkeepers: new Set(),
+        };
+      }
+
+      salesmanStats[salesmanId].totalStrips += sale.strips;
+      salesmanStats[salesmanId].totalValue += saleValue;
+      salesmanStats[salesmanId].totalSales += 1;
+      if (sale.invoiceNo) {
+        salesmanStats[salesmanId].totalBills.add(sale.invoiceNo);
+      }
+      salesmanStats[salesmanId].products.add(sale.product._id.toString());
+      if (sale.shopkeeper) {
+        salesmanStats[salesmanId].shopkeepers.add(sale.shopkeeper._id.toString());
+      }
+    });
+
+    // Also get stock allocations for reference (what was allocated to salesman)
+    const allocationQuery = {};
+    if (dealerId) {
+      allocationQuery.dealer = dealerId;
+    }
+    const allocations = await StockAllocation.find({
+      ...allocationQuery,
+      createdAt: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
+    })
+    .populate('salesman', 'name email')
+    .populate('dealer', 'name email')
+    .populate('product', 'title packetPrice packetsPerStrip');
+
     allocations.forEach(allocation => {
       const salesmanId = allocation.salesman._id.toString();
-      const value = allocation.strips * allocation.product.packetsPerStrip * allocation.product.packetPrice;
-
       if (!salesmanStats[salesmanId]) {
         salesmanStats[salesmanId] = {
           salesman: {
@@ -478,24 +574,26 @@ router.get('/salesmen', verifyToken, verifyAdmin, async (req, res) => {
           totalStrips: 0,
           totalValue: 0,
           totalAllocations: 0,
+          totalSales: 0,
+          totalBills: new Set(),
           products: new Set(),
+          shopkeepers: new Set(),
         };
       }
-
-      salesmanStats[salesmanId].totalStrips += allocation.strips;
-      salesmanStats[salesmanId].totalValue += value;
       salesmanStats[salesmanId].totalAllocations += 1;
-      salesmanStats[salesmanId].products.add(allocation.product._id.toString());
     });
 
     // Convert to array
     let salesmen = Object.values(salesmanStats).map(stat => ({
       ...stat,
       uniqueProducts: stat.products.size,
+      uniqueShopkeepers: stat.shopkeepers.size,
+      totalBills: stat.totalBills.size,
+      averageSaleValue: stat.totalSales > 0 ? stat.totalValue / stat.totalSales : 0,
       averageAllocationValue: stat.totalAllocations > 0 ? stat.totalValue / stat.totalAllocations : 0,
     }));
 
-    // Sort by total value
+    // Sort by total value (actual sales)
     salesmen.sort((a, b) => b.totalValue - a.totalValue);
 
     res.json({
@@ -510,6 +608,8 @@ router.get('/salesmen', verifyToken, verifyAdmin, async (req, res) => {
           totalStrips: salesmen.reduce((sum, s) => sum + s.totalStrips, 0),
           totalValue: salesmen.reduce((sum, s) => sum + s.totalValue, 0),
           totalAllocations: salesmen.reduce((sum, s) => sum + s.totalAllocations, 0),
+          totalSales: salesmen.reduce((sum, s) => sum + s.totalSales, 0),
+          totalBills: salesmen.reduce((sum, s) => sum + s.totalBills, 0),
         }
       }
     });
@@ -745,7 +845,7 @@ router.get('/locations', verifyToken, verifyAdmin, async (req, res) => {
       });
     });
 
-    // Calculate revenue by district (through dealers)
+    // Calculate revenue by district (through dealers from DealerRequest)
     dealerRequests.forEach(request => {
       const dealerId = request.dealer._id.toString();
       const dealerData = Object.values(dealersWithLocations).find(d => d.dealer.id === dealerId);
@@ -762,6 +862,42 @@ router.get('/locations', verifyToken, verifyAdmin, async (req, res) => {
       }
     });
 
+    // Get approved sales by location (Salesman → Shopkeeper → Dealer Approved)
+    const approvedSales = await Sale.find({
+      billStatus: 'approved',
+      saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {},
+      'location.district': { $exists: true, $ne: '' }
+    })
+    .populate('dealer', 'name email')
+    .populate('salesman', 'name email')
+    .populate('product', 'title packetPrice packetsPerStrip');
+
+    // Calculate revenue by district from actual sales
+    approvedSales.forEach(sale => {
+      const district = sale.location?.district;
+      if (district) {
+        // Initialize district if not exists
+        if (!districtStats[district]) {
+          districtStats[district] = {
+            district,
+            dealers: new Set(),
+            salesmen: new Set(),
+            totalRevenue: 0,
+            totalStrips: 0,
+            totalRequests: 0,
+            totalSales: 0,
+          };
+        }
+        
+        const saleRevenue = sale.totalAmount; // Actual sale amount
+        districtStats[district].totalRevenue += saleRevenue;
+        districtStats[district].totalStrips += sale.strips;
+        districtStats[district].totalSales += 1;
+        districtStats[district].dealers.add(sale.dealer._id.toString());
+        districtStats[district].salesmen.add(sale.salesman._id.toString());
+      }
+    });
+
     // Convert to array
     const locations = Object.values(districtStats).map(stat => ({
       district: stat.district,
@@ -769,7 +905,8 @@ router.get('/locations', verifyToken, verifyAdmin, async (req, res) => {
       totalSalesmen: stat.salesmen.size,
       totalRevenue: stat.totalRevenue,
       totalStrips: stat.totalStrips,
-      totalRequests: stat.totalRequests,
+      totalRequests: stat.totalRequests || 0,
+      totalSales: stat.totalSales || 0,
       averageRevenuePerDealer: stat.dealers.size > 0 ? stat.totalRevenue / stat.dealers.size : 0,
     }));
 
@@ -787,6 +924,7 @@ router.get('/locations', verifyToken, verifyAdmin, async (req, res) => {
           totalSalesmen: Object.keys(salesmenWithLocations).length,
           totalRevenue: locations.reduce((sum, l) => sum + l.totalRevenue, 0),
           totalStrips: locations.reduce((sum, l) => sum + l.totalStrips, 0),
+          totalSales: locations.reduce((sum, l) => sum + (l.totalSales || 0), 0),
         }
       }
     });

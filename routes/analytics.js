@@ -113,34 +113,35 @@ router.get('/revenue', verifyToken, verifyAdmin, async (req, res) => {
     const { startDate, endDate } = getDateRange(period);
     const language = getLanguage(req);
 
-    // Get all approved requests in date range
-    const requests = await DealerRequest.find({
-      status: 'approved',
-      processedAt: { $gte: startDate, $lte: endDate }
+    // Get all approved sales (bills) in date range - these are actual sales to shopkeepers
+    const sales = await Sale.find({
+      billStatus: 'approved',
+      saleDate: { $gte: startDate, $lte: endDate }
     })
     .populate('product', 'title packetPrice packetsPerStrip')
     .populate('dealer', 'name email')
-    .sort({ processedAt: 1 });
+    .populate('salesman', 'name email')
+    .sort({ saleDate: 1 });
 
     // Calculate revenue by date
     const revenueByDate = {};
     let totalRevenue = 0;
     let totalStrips = 0;
 
-    requests.forEach(request => {
-      const date = new Date(request.processedAt).toISOString().split('T')[0];
-      const revenue = request.strips * request.product.packetsPerStrip * request.product.packetPrice;
+    sales.forEach(sale => {
+      const date = new Date(sale.saleDate).toISOString().split('T')[0];
+      const revenue = sale.totalAmount; // Use actual sale amount
       
       if (!revenueByDate[date]) {
         revenueByDate[date] = { date, revenue: 0, strips: 0, count: 0 };
       }
       
       revenueByDate[date].revenue += revenue;
-      revenueByDate[date].strips += request.strips;
+      revenueByDate[date].strips += sale.strips;
       revenueByDate[date].count += 1;
       
       totalRevenue += revenue;
-      totalStrips += request.strips;
+      totalStrips += sale.strips;
     });
 
     const revenueData = Object.values(revenueByDate).sort((a, b) => 
@@ -153,11 +154,11 @@ router.get('/revenue', verifyToken, verifyAdmin, async (req, res) => {
         period,
         totalRevenue,
         totalStrips,
-        totalRequests: requests.length,
+        totalRequests: sales.length,
         revenueByDate: revenueData,
         summary: {
           averageDailyRevenue: revenueData.length > 0 ? totalRevenue / revenueData.length : 0,
-          averageOrderValue: requests.length > 0 ? totalRevenue / requests.length : 0,
+          averageOrderValue: sales.length > 0 ? totalRevenue / sales.length : 0,
         }
       }
     });
@@ -178,60 +179,20 @@ router.get('/products', verifyToken, verifyAdmin, async (req, res) => {
     const { startDate, endDate } = getDateRange(period);
     const language = getLanguage(req);
 
-    // Get all approved requests (Admin → Dealer)
-    const requests = await DealerRequest.find({
-      status: 'approved',
-      processedAt: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
-    })
-    .populate('product', 'title packetPrice packetsPerStrip image stock')
-    .populate('dealer', 'name email');
-
-    // Get approved sales (Salesman → Shopkeeper → Dealer Approved)
-    const approvedSales = await Sale.find({
+    // Get all approved sales (bills) - these are actual product sales to shopkeepers
+    const sales = await Sale.find({
       billStatus: 'approved',
       saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
     })
     .populate('product', 'title packetPrice packetsPerStrip image stock')
-    .populate('dealer', 'name email')
-    .populate('salesman', 'name email');
+    .populate('dealer', 'name email');
 
     // Aggregate by product
     const productStats = {};
 
-    // Process dealer requests (Admin → Dealer)
-    requests.forEach(request => {
-      const productId = request.product._id.toString();
-      const revenue = request.strips * request.product.packetsPerStrip * request.product.packetPrice;
-
-      if (!productStats[productId]) {
-        productStats[productId] = {
-          product: {
-            id: productId,
-            title: formatProductTitle(request.product, language),
-            packetPrice: request.product.packetPrice,
-            packetsPerStrip: request.product.packetsPerStrip,
-            image: request.product.image,
-            stock: request.product.stock,
-          },
-          totalRevenue: 0,
-          totalStrips: 0,
-          totalRequests: 0,
-          totalSales: 0,
-          uniqueDealers: new Set(),
-          uniqueSalesmen: new Set(),
-        };
-      }
-
-      productStats[productId].totalRevenue += revenue;
-      productStats[productId].totalStrips += request.strips;
-      productStats[productId].totalRequests += 1;
-      productStats[productId].uniqueDealers.add(request.dealer._id.toString());
-    });
-
-    // Process approved sales (Salesman → Shopkeeper)
-    approvedSales.forEach(sale => {
+    sales.forEach(sale => {
       const productId = sale.product._id.toString();
-      const saleRevenue = sale.totalAmount; // Actual sale amount
+      const revenue = sale.totalAmount; // Use actual sale amount
 
       if (!productStats[productId]) {
         productStats[productId] = {
@@ -246,27 +207,22 @@ router.get('/products', verifyToken, verifyAdmin, async (req, res) => {
           totalRevenue: 0,
           totalStrips: 0,
           totalRequests: 0,
-          totalSales: 0,
           uniqueDealers: new Set(),
-          uniqueSalesmen: new Set(),
         };
       }
 
-      productStats[productId].totalRevenue += saleRevenue;
+      productStats[productId].totalRevenue += revenue;
       productStats[productId].totalStrips += sale.strips;
-      productStats[productId].totalSales += 1;
+      productStats[productId].totalRequests += 1;
       productStats[productId].uniqueDealers.add(sale.dealer._id.toString());
-      productStats[productId].uniqueSalesmen.add(sale.salesman._id.toString());
     });
 
     // Convert to array and calculate metrics
     let products = Object.values(productStats).map(stat => ({
       ...stat,
       uniqueDealers: stat.uniqueDealers.size,
-      uniqueSalesmen: stat.uniqueSalesmen ? stat.uniqueSalesmen.size : 0,
       averageOrderValue: stat.totalRequests > 0 ? stat.totalRevenue / stat.totalRequests : 0,
       averageStripsPerOrder: stat.totalRequests > 0 ? stat.totalStrips / stat.totalRequests : 0,
-      averageSaleValue: stat.totalSales > 0 ? stat.totalRevenue / stat.totalSales : 0,
     }));
 
     // Sort products
@@ -318,28 +274,28 @@ router.get('/dealers', verifyToken, verifyAdmin, async (req, res) => {
     const { period = 'all', sortBy = 'revenue' } = req.query;
     const { startDate, endDate } = getDateRange(period);
 
-    // Get all approved requests
-    const requests = await DealerRequest.find({
-      status: 'approved',
-      processedAt: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
+    // Get all approved sales (bills) - these are actual sales through dealers' salesmen
+    const sales = await Sale.find({
+      billStatus: 'approved',
+      saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
     })
     .populate('product', 'title packetPrice packetsPerStrip')
     .populate('dealer', 'name email')
-    .populate('paymentVerifiedBy', 'name');
+    .populate('salesman', 'name email');
 
     // Aggregate by dealer
     const dealerStats = {};
 
-    requests.forEach(request => {
-      const dealerId = request.dealer._id.toString();
-      const revenue = request.strips * request.product.packetsPerStrip * request.product.packetPrice;
+    sales.forEach(sale => {
+      const dealerId = sale.dealer._id.toString();
+      const revenue = sale.totalAmount; // Use actual sale amount
 
       if (!dealerStats[dealerId]) {
         dealerStats[dealerId] = {
           dealer: {
             id: dealerId,
-            name: request.dealer.name,
-            email: request.dealer.email,
+            name: sale.dealer.name,
+            email: sale.dealer.email,
           },
           totalRevenue: 0,
           totalStrips: 0,
@@ -357,25 +313,26 @@ router.get('/dealers', verifyToken, verifyAdmin, async (req, res) => {
       }
 
       dealerStats[dealerId].totalRevenue += revenue;
-      dealerStats[dealerId].totalStrips += request.strips;
+      dealerStats[dealerId].totalStrips += sale.strips;
       dealerStats[dealerId].totalRequests += 1;
       dealerStats[dealerId].approvedRequests += 1;
 
-      if (request.paymentStatus === 'verified') {
+      // Track payment status from sales
+      if (sale.paymentStatus === 'completed') {
         dealerStats[dealerId].paymentHistory.verified += 1;
-      } else if (request.paymentStatus === 'rejected') {
-        dealerStats[dealerId].paymentHistory.rejected += 1;
+      } else if (sale.paymentStatus === 'partial') {
+        dealerStats[dealerId].paymentHistory.pending += 1;
       } else {
         dealerStats[dealerId].paymentHistory.pending += 1;
       }
 
       if (!dealerStats[dealerId].lastOrderDate || 
-          new Date(request.processedAt) > new Date(dealerStats[dealerId].lastOrderDate)) {
-        dealerStats[dealerId].lastOrderDate = request.processedAt;
+          new Date(sale.saleDate) > new Date(dealerStats[dealerId].lastOrderDate)) {
+        dealerStats[dealerId].lastOrderDate = sale.saleDate;
       }
     });
 
-    // Get all dealers to include those with no orders
+    // Get all dealers to include those with no sales
     const allDealers = await User.find({ role: { $in: ['dealer', 'dellear'] } })
       .select('name email');
 
@@ -404,26 +361,36 @@ router.get('/dealers', verifyToken, verifyAdmin, async (req, res) => {
       }
     });
 
-    // Get pending and cancelled requests
-    const allRequests = await DealerRequest.find({
-      processedAt: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
+    // Get pending and rejected bills for dealers
+    const pendingSales = await Sale.find({
+      billStatus: 'pending',
+      saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
     })
     .populate('dealer', 'name email');
 
-    allRequests.forEach(request => {
-      const dealerId = request.dealer._id.toString();
+    const rejectedSales = await Sale.find({
+      billStatus: 'rejected',
+      saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
+    })
+    .populate('dealer', 'name email');
+
+    pendingSales.forEach(sale => {
+      const dealerId = sale.dealer._id.toString();
       if (dealerStats[dealerId]) {
-        if (request.status === 'pending') {
-          dealerStats[dealerId].pendingRequests += 1;
-        } else if (request.status === 'cancelled') {
-          dealerStats[dealerId].cancelledRequests += 1;
-        }
+        dealerStats[dealerId].pendingRequests += 1;
+      }
+    });
+
+    rejectedSales.forEach(sale => {
+      const dealerId = sale.dealer._id.toString();
+      if (dealerStats[dealerId]) {
+        dealerStats[dealerId].cancelledRequests += 1;
       }
     });
 
     // Convert to array and calculate payment success rate
     let dealers = Object.values(dealerStats).map(stat => {
-      const totalPayments = stat.paymentHistory.verified + stat.paymentHistory.rejected;
+      const totalPayments = stat.paymentHistory.verified + stat.paymentHistory.rejected + stat.paymentHistory.pending;
       return {
         ...stat,
         averageOrderValue: stat.approvedRequests > 0 ? stat.totalRevenue / stat.approvedRequests : 0,
@@ -479,9 +446,9 @@ router.get('/salesmen', verifyToken, verifyAdmin, async (req, res) => {
     const { dealerId, period = 'all' } = req.query;
     const { startDate, endDate } = getDateRange(period);
 
-    // Build query for sales
-    const salesQuery = {
-      billStatus: 'approved', // Only track approved bills (dealer approved)
+    // Build query for approved sales (bills)
+    const query = {
+      billStatus: 'approved',
       saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
     };
     if (dealerId) {
@@ -492,23 +459,22 @@ router.get('/salesmen', verifyToken, verifyAdmin, async (req, res) => {
           message: 'Dealer not found' 
         });
       }
-      salesQuery.dealer = dealerId;
+      query.dealer = dealerId;
     }
 
-    // Get approved sales (bills) - this is the actual sales flow: Salesman → Shopkeeper → Dealer Approved
-    const approvedSales = await Sale.find(salesQuery)
-      .populate('salesman', 'name email')
-      .populate('dealer', 'name email')
-      .populate('product', 'title packetPrice packetsPerStrip')
-      .populate('shopkeeper', 'name phone')
-      .sort({ saleDate: -1 });
+    // Get approved sales - these are actual sales made by salesmen to shopkeepers
+    const sales = await Sale.find(query)
+    .populate('salesman', 'name email')
+    .populate('dealer', 'name email')
+    .populate('product', 'title packetPrice packetsPerStrip')
+    .sort({ saleDate: -1 });
 
     // Aggregate by salesman
     const salesmanStats = {};
 
-    approvedSales.forEach(sale => {
+    sales.forEach(sale => {
       const salesmanId = sale.salesman._id.toString();
-      const saleValue = sale.totalAmount; // Use actual sale amount
+      const value = sale.totalAmount; // Use actual sale amount
 
       if (!salesmanStats[salesmanId]) {
         salesmanStats[salesmanId] = {
@@ -525,75 +491,24 @@ router.get('/salesmen', verifyToken, verifyAdmin, async (req, res) => {
           totalStrips: 0,
           totalValue: 0,
           totalAllocations: 0,
-          totalSales: 0,
-          totalBills: new Set(),
           products: new Set(),
-          shopkeepers: new Set(),
         };
       }
 
       salesmanStats[salesmanId].totalStrips += sale.strips;
-      salesmanStats[salesmanId].totalValue += saleValue;
-      salesmanStats[salesmanId].totalSales += 1;
-      if (sale.invoiceNo) {
-        salesmanStats[salesmanId].totalBills.add(sale.invoiceNo);
-      }
-      salesmanStats[salesmanId].products.add(sale.product._id.toString());
-      if (sale.shopkeeper) {
-        salesmanStats[salesmanId].shopkeepers.add(sale.shopkeeper._id.toString());
-      }
-    });
-
-    // Also get stock allocations for reference (what was allocated to salesman)
-    const allocationQuery = {};
-    if (dealerId) {
-      allocationQuery.dealer = dealerId;
-    }
-    const allocations = await StockAllocation.find({
-      ...allocationQuery,
-      createdAt: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
-    })
-    .populate('salesman', 'name email')
-    .populate('dealer', 'name email')
-    .populate('product', 'title packetPrice packetsPerStrip');
-
-    allocations.forEach(allocation => {
-      const salesmanId = allocation.salesman._id.toString();
-      if (!salesmanStats[salesmanId]) {
-        salesmanStats[salesmanId] = {
-          salesman: {
-            id: salesmanId,
-            name: allocation.salesman.name,
-            email: allocation.salesman.email,
-          },
-          dealer: {
-            id: allocation.dealer._id.toString(),
-            name: allocation.dealer.name,
-            email: allocation.dealer.email,
-          },
-          totalStrips: 0,
-          totalValue: 0,
-          totalAllocations: 0,
-          totalSales: 0,
-          totalBills: new Set(),
-          products: new Set(),
-          shopkeepers: new Set(),
-        };
-      }
+      salesmanStats[salesmanId].totalValue += value;
       salesmanStats[salesmanId].totalAllocations += 1;
+      salesmanStats[salesmanId].products.add(sale.product._id.toString());
     });
 
     // Convert to array
     let salesmen = Object.values(salesmanStats).map(stat => ({
       ...stat,
       uniqueProducts: stat.products.size,
-      uniqueShopkeepers: stat.shopkeepers.size,
-      totalBills: stat.totalBills.size,
-      averageSaleValue: stat.totalSales > 0 ? stat.totalValue / stat.totalSales : 0,
       averageAllocationValue: stat.totalAllocations > 0 ? stat.totalValue / stat.totalAllocations : 0,
     }));
 
-    // Sort by total value (actual sales)
+    // Sort by total value
     salesmen.sort((a, b) => b.totalValue - a.totalValue);
 
     res.json({
@@ -608,8 +523,6 @@ router.get('/salesmen', verifyToken, verifyAdmin, async (req, res) => {
           totalStrips: salesmen.reduce((sum, s) => sum + s.totalStrips, 0),
           totalValue: salesmen.reduce((sum, s) => sum + s.totalValue, 0),
           totalAllocations: salesmen.reduce((sum, s) => sum + s.totalAllocations, 0),
-          totalSales: salesmen.reduce((sum, s) => sum + s.totalSales, 0),
-          totalBills: salesmen.reduce((sum, s) => sum + s.totalBills, 0),
         }
       }
     });
@@ -810,17 +723,20 @@ router.get('/locations', verifyToken, verifyAdmin, async (req, res) => {
       }
     });
 
-    // Get dealer requests by location (through dealer)
-    const dealerRequests = await DealerRequest.find({
-      status: 'approved',
-      processedAt: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
+    // Get approved sales (bills) by location - these are actual sales to shopkeepers
+    const sales = await Sale.find({
+      billStatus: 'approved',
+      saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {},
+      'location.district': { $exists: true, $ne: '' }
     })
     .populate('dealer', 'name email')
+    .populate('salesman', 'name email')
     .populate('product', 'title packetPrice packetsPerStrip');
 
-    // Aggregate by district
+    // Aggregate by district from actual sales
     const districtStats = {};
 
+    // First, add dealers and salesmen from location allocations
     Object.values(dealersWithLocations).forEach(dealerData => {
       dealerData.districts.forEach(district => {
         if (!districtStats[district]) {
@@ -845,38 +761,10 @@ router.get('/locations', verifyToken, verifyAdmin, async (req, res) => {
       });
     });
 
-    // Calculate revenue by district (through dealers from DealerRequest)
-    dealerRequests.forEach(request => {
-      const dealerId = request.dealer._id.toString();
-      const dealerData = Object.values(dealersWithLocations).find(d => d.dealer.id === dealerId);
-      
-      if (dealerData) {
-        dealerData.districts.forEach(district => {
-          if (districtStats[district]) {
-            const revenue = request.strips * request.product.packetsPerStrip * request.product.packetPrice;
-            districtStats[district].totalRevenue += revenue;
-            districtStats[district].totalStrips += request.strips;
-            districtStats[district].totalRequests += 1;
-          }
-        });
-      }
-    });
-
-    // Get approved sales by location (Salesman → Shopkeeper → Dealer Approved)
-    const approvedSales = await Sale.find({
-      billStatus: 'approved',
-      saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {},
-      'location.district': { $exists: true, $ne: '' }
-    })
-    .populate('dealer', 'name email')
-    .populate('salesman', 'name email')
-    .populate('product', 'title packetPrice packetsPerStrip');
-
     // Calculate revenue by district from actual sales
-    approvedSales.forEach(sale => {
+    sales.forEach(sale => {
       const district = sale.location?.district;
       if (district) {
-        // Initialize district if not exists
         if (!districtStats[district]) {
           districtStats[district] = {
             district,
@@ -885,16 +773,21 @@ router.get('/locations', verifyToken, verifyAdmin, async (req, res) => {
             totalRevenue: 0,
             totalStrips: 0,
             totalRequests: 0,
-            totalSales: 0,
           };
         }
         
-        const saleRevenue = sale.totalAmount; // Actual sale amount
-        districtStats[district].totalRevenue += saleRevenue;
+        const revenue = sale.totalAmount; // Use actual sale amount
+        districtStats[district].totalRevenue += revenue;
         districtStats[district].totalStrips += sale.strips;
-        districtStats[district].totalSales += 1;
-        districtStats[district].dealers.add(sale.dealer._id.toString());
-        districtStats[district].salesmen.add(sale.salesman._id.toString());
+        districtStats[district].totalRequests += 1;
+        
+        // Add dealer and salesman to the district
+        if (sale.dealer) {
+          districtStats[district].dealers.add(sale.dealer._id.toString());
+        }
+        if (sale.salesman) {
+          districtStats[district].salesmen.add(sale.salesman._id.toString());
+        }
       }
     });
 
@@ -905,8 +798,7 @@ router.get('/locations', verifyToken, verifyAdmin, async (req, res) => {
       totalSalesmen: stat.salesmen.size,
       totalRevenue: stat.totalRevenue,
       totalStrips: stat.totalStrips,
-      totalRequests: stat.totalRequests || 0,
-      totalSales: stat.totalSales || 0,
+      totalRequests: stat.totalRequests,
       averageRevenuePerDealer: stat.dealers.size > 0 ? stat.totalRevenue / stat.dealers.size : 0,
     }));
 
@@ -924,7 +816,6 @@ router.get('/locations', verifyToken, verifyAdmin, async (req, res) => {
           totalSalesmen: Object.keys(salesmenWithLocations).length,
           totalRevenue: locations.reduce((sum, l) => sum + l.totalRevenue, 0),
           totalStrips: locations.reduce((sum, l) => sum + l.totalStrips, 0),
-          totalSales: locations.reduce((sum, l) => sum + (l.totalSales || 0), 0),
         }
       }
     });
@@ -950,64 +841,64 @@ router.get('/export', verifyToken, verifyAdmin, async (req, res) => {
     switch (type) {
       case 'revenue': {
         const { startDate, endDate } = getDateRange(period);
-        const requests = await DealerRequest.find({
-          status: 'approved',
-          processedAt: { $gte: startDate, $lte: endDate }
+        const sales = await Sale.find({
+          billStatus: 'approved',
+          saleDate: { $gte: startDate, $lte: endDate }
         })
         .populate('product', 'title packetPrice packetsPerStrip')
         .populate('dealer', 'name email')
-        .sort({ processedAt: 1 });
+        .sort({ saleDate: 1 });
 
         const revenueByDate = {};
         let totalRevenue = 0;
         let totalStrips = 0;
 
-        requests.forEach(request => {
-          const date = new Date(request.processedAt).toISOString().split('T')[0];
-          const revenue = request.strips * request.product.packetsPerStrip * request.product.packetPrice;
+        sales.forEach(sale => {
+          const date = new Date(sale.saleDate).toISOString().split('T')[0];
+          const revenue = sale.totalAmount; // Use actual sale amount
           
           if (!revenueByDate[date]) {
             revenueByDate[date] = { date, revenue: 0, strips: 0, count: 0 };
           }
           
           revenueByDate[date].revenue += revenue;
-          revenueByDate[date].strips += request.strips;
+          revenueByDate[date].strips += sale.strips;
           revenueByDate[date].count += 1;
           
           totalRevenue += revenue;
-          totalStrips += request.strips;
+          totalStrips += sale.strips;
         });
 
         data = {
           period,
           totalRevenue,
           totalStrips,
-          totalRequests: requests.length,
+          totalRequests: sales.length,
           revenueByDate: Object.values(revenueByDate).sort((a, b) => new Date(a.date) - new Date(b.date)),
         };
         break;
       }
       case 'products': {
         const { startDate, endDate } = getDateRange(period);
-        const requests = await DealerRequest.find({
-          status: 'approved',
-          processedAt: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
+        const sales = await Sale.find({
+          billStatus: 'approved',
+          saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
         })
         .populate('product', 'title packetPrice packetsPerStrip image stock')
         .populate('dealer', 'name email');
 
         const productStats = {};
-        requests.forEach(request => {
-          const productId = request.product._id.toString();
-          const revenue = request.strips * request.product.packetsPerStrip * request.product.packetPrice;
+        sales.forEach(sale => {
+          const productId = sale.product._id.toString();
+          const revenue = sale.totalAmount; // Use actual sale amount
 
           if (!productStats[productId]) {
             productStats[productId] = {
               product: {
                 id: productId,
-                title: formatProductTitle(request.product, language),
-                packetPrice: request.product.packetPrice,
-                packetsPerStrip: request.product.packetsPerStrip,
+                title: formatProductTitle(sale.product, language),
+                packetPrice: sale.product.packetPrice,
+                packetsPerStrip: sale.product.packetsPerStrip,
               },
               totalRevenue: 0,
               totalStrips: 0,
@@ -1015,7 +906,7 @@ router.get('/export', verifyToken, verifyAdmin, async (req, res) => {
             };
           }
           productStats[productId].totalRevenue += revenue;
-          productStats[productId].totalStrips += request.strips;
+          productStats[productId].totalStrips += sale.strips;
           productStats[productId].totalRequests += 1;
         });
 
@@ -1027,24 +918,24 @@ router.get('/export', verifyToken, verifyAdmin, async (req, res) => {
       }
       case 'dealers': {
         const { startDate, endDate } = getDateRange(period);
-        const requests = await DealerRequest.find({
-          status: 'approved',
-          processedAt: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
+        const sales = await Sale.find({
+          billStatus: 'approved',
+          saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
         })
         .populate('product', 'title packetPrice packetsPerStrip')
         .populate('dealer', 'name email');
 
         const dealerStats = {};
-        requests.forEach(request => {
-          const dealerId = request.dealer._id.toString();
-          const revenue = request.strips * request.product.packetsPerStrip * request.product.packetPrice;
+        sales.forEach(sale => {
+          const dealerId = sale.dealer._id.toString();
+          const revenue = sale.totalAmount; // Use actual sale amount
 
           if (!dealerStats[dealerId]) {
             dealerStats[dealerId] = {
               dealer: {
                 id: dealerId,
-                name: request.dealer.name,
-                email: request.dealer.email,
+                name: sale.dealer.name,
+                email: sale.dealer.email,
               },
               totalRevenue: 0,
               totalStrips: 0,
@@ -1052,7 +943,7 @@ router.get('/export', verifyToken, verifyAdmin, async (req, res) => {
             };
           }
           dealerStats[dealerId].totalRevenue += revenue;
-          dealerStats[dealerId].totalStrips += request.strips;
+          dealerStats[dealerId].totalStrips += sale.strips;
           dealerStats[dealerId].totalRequests += 1;
         });
 
@@ -1064,36 +955,37 @@ router.get('/export', verifyToken, verifyAdmin, async (req, res) => {
       }
       case 'salesmen': {
         const { startDate, endDate } = getDateRange(period);
-        const allocations = await StockAllocation.find({
-          createdAt: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
+        const sales = await Sale.find({
+          billStatus: 'approved',
+          saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
         })
         .populate('salesman', 'name email')
         .populate('dealer', 'name email')
         .populate('product', 'title packetPrice packetsPerStrip');
 
         const salesmanStats = {};
-        allocations.forEach(allocation => {
-          const salesmanId = allocation.salesman._id.toString();
-          const value = allocation.strips * allocation.product.packetsPerStrip * allocation.product.packetPrice;
+        sales.forEach(sale => {
+          const salesmanId = sale.salesman._id.toString();
+          const value = sale.totalAmount; // Use actual sale amount
 
           if (!salesmanStats[salesmanId]) {
             salesmanStats[salesmanId] = {
               salesman: {
                 id: salesmanId,
-                name: allocation.salesman.name,
-                email: allocation.salesman.email,
+                name: sale.salesman.name,
+                email: sale.salesman.email,
               },
               dealer: {
-                id: allocation.dealer._id.toString(),
-                name: allocation.dealer.name,
-                email: allocation.dealer.email,
+                id: sale.dealer._id.toString(),
+                name: sale.dealer.name,
+                email: sale.dealer.email,
               },
               totalStrips: 0,
               totalValue: 0,
               totalAllocations: 0,
             };
           }
-          salesmanStats[salesmanId].totalStrips += allocation.strips;
+          salesmanStats[salesmanId].totalStrips += sale.strips;
           salesmanStats[salesmanId].totalValue += value;
           salesmanStats[salesmanId].totalAllocations += 1;
         });

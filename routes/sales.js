@@ -828,6 +828,10 @@ router.get('/reports/summary', verifyToken, async (req, res) => {
     }
     query.saleDate = { $gte: dateRange.startDate, $lte: dateRange.endDate };
 
+    // For reports, only include approved sales (actual revenue)
+    // This ensures reports show only confirmed sales, not pending bills
+    query.billStatus = 'approved';
+
     // Get sales data
     const sales = await Sale.find(query)
       .populate('salesman', 'name email')

@@ -136,7 +136,14 @@ router.get('/payments', verifyToken, verifyDealerOrAdmin, async (req, res) => {
 
     const payments = await Payment.find(query)
       .populate('dealer', 'name email')
-      .populate('dealerRequest', 'strips status')
+      .populate({
+        path: 'dealerRequest',
+        select: 'strips status totalAmount paidAmount paymentType product orderGroupId',
+        populate: {
+          path: 'product',
+          select: 'title image packetPrice packetsPerStrip'
+        }
+      })
       .populate('processedBy', 'name email')
       .populate('reconciledBy', 'name email')
       .sort({ transactionDate: -1, createdAt: -1 })
@@ -203,7 +210,14 @@ router.get('/payments/:id', verifyToken, verifyDealerOrAdmin, async (req, res) =
 
     const payment = await Payment.findById(req.params.id)
       .populate('dealer', 'name email')
-      .populate('dealerRequest')
+      .populate({
+        path: 'dealerRequest',
+        select: 'strips status totalAmount paidAmount paymentType product orderGroupId',
+        populate: {
+          path: 'product',
+          select: 'title image packetPrice packetsPerStrip'
+        }
+      })
       .populate('processedBy', 'name email')
       .populate('reconciledBy', 'name email');
 
@@ -357,7 +371,14 @@ router.post('/payments', verifyToken, verifyDealerOrAdmin, upload.single('receip
     await payment.save();
     await payment.populate('dealer', 'name email');
     if (payment.dealerRequest) {
-      await payment.populate('dealerRequest');
+      await payment.populate({
+        path: 'dealerRequest',
+        select: 'strips status totalAmount paidAmount paymentType product',
+        populate: {
+          path: 'product',
+          select: 'title image packetPrice packetsPerStrip'
+        }
+      });
     }
 
     const paymentObj = payment.toObject ? payment.toObject() : payment;
@@ -487,7 +508,14 @@ router.get('/outstanding', verifyToken, verifyAdmin, async (req, res) => {
     // Get all payments that haven't been fully reconciled
     const payments = await Payment.find(query)
       .populate('dealer', 'name email')
-      .populate('dealerRequest')
+      .populate({
+        path: 'dealerRequest',
+        select: 'strips status totalAmount paidAmount paymentType product orderGroupId',
+        populate: {
+          path: 'product',
+          select: 'title image packetPrice packetsPerStrip'
+        }
+      })
       .sort({ transactionDate: -1 });
 
     // Calculate outstanding amounts per dealer
@@ -1128,7 +1156,14 @@ router.get('/reminders', verifyToken, verifyAdmin, async (req, res) => {
       transactionDate: { $lte: cutoffDate },
     })
       .populate('dealer', 'name email')
-      .populate('dealerRequest')
+      .populate({
+        path: 'dealerRequest',
+        select: 'strips status totalAmount paidAmount paymentType product orderGroupId',
+        populate: {
+          path: 'product',
+          select: 'title image packetPrice packetsPerStrip'
+        }
+      })
       .sort({ transactionDate: 1 });
 
     const reminders = pendingPayments.map(payment => {

@@ -382,6 +382,7 @@ router.get('/', verifyToken, async (req, res) => {
       .populate('salesman', 'name email')
       .populate('dealer', 'name email')
       .populate('product', 'title packetPrice packetsPerStrip image')
+      .populate('shopkeeper', 'name phone email location')
       .sort({ saleDate: -1, createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -407,6 +408,10 @@ router.get('/', verifyToken, async (req, res) => {
           id: saleObj.product._id || saleObj.product.id,
           title: formatProductTitle(saleObj.product, language),
         } : saleObj.product,
+        shopkeeper: saleObj.shopkeeper ? {
+          ...saleObj.shopkeeper,
+          id: saleObj.shopkeeper._id || saleObj.shopkeeper.id,
+        } : saleObj.shopkeeper,
       };
     });
 
@@ -445,7 +450,8 @@ router.get('/:id', verifyToken, async (req, res) => {
     const sale = await Sale.findById(req.params.id)
       .populate('salesman', 'name email')
       .populate('dealer', 'name email')
-      .populate('product', 'title packetPrice packetsPerStrip image');
+      .populate('product', 'title packetPrice packetsPerStrip image')
+      .populate('shopkeeper', 'name phone email location');
 
     if (!sale) {
       return res.status(404).json({ 
@@ -486,6 +492,10 @@ router.get('/:id', verifyToken, async (req, res) => {
         id: saleObj.product._id || saleObj.product.id,
         title: formatProductTitle(saleObj.product, language),
       } : saleObj.product,
+      shopkeeper: saleObj.shopkeeper ? {
+        ...saleObj.shopkeeper,
+        id: saleObj.shopkeeper._id || saleObj.shopkeeper.id,
+      } : saleObj.shopkeeper,
     };
 
     res.json({
@@ -748,6 +758,7 @@ router.post('/bill', verifyToken, verifySalesman, async (req, res) => {
       .populate('salesman', 'name email')
       .populate('dealer', 'name email')
       .populate('product', 'title packetPrice packetsPerStrip image')
+      .populate('shopkeeper', 'name phone email location')
       .sort({ createdAt: 1 });
 
     const transformedSales = populatedSales.map((sale) => {
@@ -766,6 +777,10 @@ router.post('/bill', verifyToken, verifySalesman, async (req, res) => {
               title: formatProductTitle(saleObj.product, language),
             }
           : saleObj.product,
+        shopkeeper: saleObj.shopkeeper ? {
+          ...saleObj.shopkeeper,
+          id: saleObj.shopkeeper._id || saleObj.shopkeeper.id,
+        } : saleObj.shopkeeper,
       };
     });
 
@@ -1499,6 +1514,41 @@ router.get('/bills/pending', verifyToken, verifyDealer, async (req, res) => {
           billStatus: 'pending',
         },
       },
+      // Lookup product
+      {
+        $lookup: {
+          from: 'products',
+          localField: 'product',
+          foreignField: '_id',
+          as: 'productData',
+        },
+      },
+      // Lookup salesman
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'salesman',
+          foreignField: '_id',
+          as: 'salesmanData',
+        },
+      },
+      // Lookup shopkeeper
+      {
+        $lookup: {
+          from: 'shopkeepers',
+          localField: 'shopkeeper',
+          foreignField: '_id',
+          as: 'shopkeeperData',
+        },
+      },
+      // Unwind product (take first element or null)
+      {
+        $addFields: {
+          product: { $arrayElemAt: ['$productData', 0] },
+          salesman: { $arrayElemAt: ['$salesmanData', 0] },
+          shopkeeper: { $arrayElemAt: ['$shopkeeperData', 0] },
+        },
+      },
       {
         $group: {
           _id: '$invoiceNo',
@@ -1514,25 +1564,38 @@ router.get('/bills/pending', verifyToken, verifyDealer, async (req, res) => {
       },
     ]);
 
-    // Populate references
-    const populatedBills = await Sale.populate(bills, [
-      { path: 'sales.salesman', select: 'name email' },
-      { path: 'sales.product', select: 'title packetPrice packetsPerStrip' },
-      { path: 'sales.shopkeeper', select: 'name phone' },
-    ]);
-
     // Format product titles
     const language = getLanguage(req);
-    const formattedBills = populatedBills.map(bill => ({
+    const formattedBills = bills.map(bill => ({
       ...bill,
-      sales: bill.sales.map(sale => ({
-        ...sale,
-        product: sale.product ? {
-          ...sale.product,
-          id: sale.product._id || sale.product.id,
-          title: formatProductTitle(sale.product, language),
-        } : sale.product,
-      })),
+      sales: bill.sales.map(sale => {
+        // Ensure product is properly formatted
+        let product = null;
+        if (sale.product) {
+          const productTitle = formatProductTitle(sale.product, language);
+          product = {
+            id: sale.product._id ? sale.product._id.toString() : sale.product._id,
+            title: productTitle || 'Unknown Product', // Fallback if title is empty
+            packetPrice: sale.product.packetPrice,
+            packetsPerStrip: sale.product.packetsPerStrip,
+            image: sale.product.image,
+          };
+        }
+        return {
+          ...sale,
+          product: product,
+          salesman: sale.salesman ? {
+            id: sale.salesman._id ? sale.salesman._id.toString() : sale.salesman._id,
+            name: sale.salesman.name,
+            email: sale.salesman.email,
+          } : null,
+          shopkeeper: sale.shopkeeper ? {
+            id: sale.shopkeeper._id ? sale.shopkeeper._id.toString() : sale.shopkeeper._id,
+            name: sale.shopkeeper.name,
+            phone: sale.shopkeeper.phone,
+          } : null,
+        };
+      }),
     }));
 
     res.json({
@@ -1562,6 +1625,41 @@ router.get('/bills/approved', verifyToken, verifyDealer, async (req, res) => {
           billStatus: 'approved',
         },
       },
+      // Lookup product
+      {
+        $lookup: {
+          from: 'products',
+          localField: 'product',
+          foreignField: '_id',
+          as: 'productData',
+        },
+      },
+      // Lookup salesman
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'salesman',
+          foreignField: '_id',
+          as: 'salesmanData',
+        },
+      },
+      // Lookup shopkeeper
+      {
+        $lookup: {
+          from: 'shopkeepers',
+          localField: 'shopkeeper',
+          foreignField: '_id',
+          as: 'shopkeeperData',
+        },
+      },
+      // Unwind product (take first element or null)
+      {
+        $addFields: {
+          product: { $arrayElemAt: ['$productData', 0] },
+          salesman: { $arrayElemAt: ['$salesmanData', 0] },
+          shopkeeper: { $arrayElemAt: ['$shopkeeperData', 0] },
+        },
+      },
       {
         $group: {
           _id: '$invoiceNo',
@@ -1577,25 +1675,38 @@ router.get('/bills/approved', verifyToken, verifyDealer, async (req, res) => {
       },
     ]);
 
-    // Populate references
-    const populatedBills = await Sale.populate(bills, [
-      { path: 'sales.salesman', select: 'name email' },
-      { path: 'sales.product', select: 'title packetPrice packetsPerStrip' },
-      { path: 'sales.shopkeeper', select: 'name phone' },
-    ]);
-
     // Format product titles
     const language = getLanguage(req);
-    const formattedBills = populatedBills.map(bill => ({
+    const formattedBills = bills.map(bill => ({
       ...bill,
-      sales: bill.sales.map(sale => ({
-        ...sale,
-        product: sale.product ? {
-          ...sale.product,
-          id: sale.product._id || sale.product.id,
-          title: formatProductTitle(sale.product, language),
-        } : sale.product,
-      })),
+      sales: bill.sales.map(sale => {
+        // Ensure product is properly formatted
+        let product = null;
+        if (sale.product) {
+          const productTitle = formatProductTitle(sale.product, language);
+          product = {
+            id: sale.product._id ? sale.product._id.toString() : sale.product._id,
+            title: productTitle || 'Unknown Product', // Fallback if title is empty
+            packetPrice: sale.product.packetPrice,
+            packetsPerStrip: sale.product.packetsPerStrip,
+            image: sale.product.image,
+          };
+        }
+        return {
+          ...sale,
+          product: product,
+          salesman: sale.salesman ? {
+            id: sale.salesman._id ? sale.salesman._id.toString() : sale.salesman._id,
+            name: sale.salesman.name,
+            email: sale.salesman.email,
+          } : null,
+          shopkeeper: sale.shopkeeper ? {
+            id: sale.shopkeeper._id ? sale.shopkeeper._id.toString() : sale.shopkeeper._id,
+            name: sale.shopkeeper.name,
+            phone: sale.shopkeeper.phone,
+          } : null,
+        };
+      }),
     }));
 
     res.json({

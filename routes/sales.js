@@ -1582,7 +1582,7 @@ router.get('/bills/pending', verifyToken, verifyDealer, async (req, res) => {
           };
         }
         return {
-          ...sale,
+        ...sale,
           product: product,
           salesman: sale.salesman ? {
             id: sale.salesman._id ? sale.salesman._id.toString() : sale.salesman._id,
@@ -1693,7 +1693,7 @@ router.get('/bills/approved', verifyToken, verifyDealer, async (req, res) => {
           };
         }
         return {
-          ...sale,
+        ...sale,
           product: product,
           salesman: sale.salesman ? {
             id: sale.salesman._id ? sale.salesman._id.toString() : sale.salesman._id,

@@ -235,6 +235,7 @@ router.post('/', verifyToken, verifyAdmin, upload.single('image'), async (req, r
 router.get('/', verifyToken, async (req, res) => {
   try {
     const language = getLanguage(req);
+    const { page = 1, limit = 50 } = req.query;
     const user = req.user;
 
     // Build query based on user role
@@ -252,14 +253,28 @@ router.get('/', verifyToken, async (req, res) => {
       query.isActive = true;
     }
 
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
     const messages = await Message.find(query)
       .populate('sender', 'name email role')
+      .lean()
       .sort({ createdAt: -1 })
-      .limit(50);
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Message.countDocuments(query);
 
     res.json({
       success: true,
-      data: messages,
+      data: {
+        messages,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit)),
+        },
+      },
     });
   } catch (error) {
     console.error('Get messages error:', error);
@@ -276,15 +291,31 @@ router.get('/', verifyToken, async (req, res) => {
 router.get('/sent', verifyToken, verifyAdmin, async (req, res) => {
   try {
     const language = getLanguage(req);
+    const { page = 1, limit = 50 } = req.query;
+    
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    
     const messages = await Message.find({ sender: req.user._id })
       .populate('sender', 'name email role')
       .populate('recipients', 'name email role')
+      .lean()
       .sort({ createdAt: -1 })
-      .limit(100);
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Message.countDocuments({ sender: req.user._id });
 
     res.json({
       success: true,
-      data: messages,
+      data: {
+        messages,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit)),
+        },
+      },
     });
   } catch (error) {
     console.error('Get sent messages error:', error);

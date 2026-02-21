@@ -36,31 +36,90 @@ app.use(express.json());
 // Add database name to connection string if not present
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://hetjani818_db_user:123@cluster0.ux8dqnc.mongodb.net/myapp?appName=Cluster0';
 
-mongoose.connect(MONGODB_URI, {
+// Connection Pool Configuration
+const connectionOptions = {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-})
+  // Connection Pool Settings
+  maxPoolSize: 50, // Maximum number of connections in the pool (default: 10)
+  minPoolSize: 5, // Minimum number of connections to maintain (default: 0)
+  maxIdleTimeMS: 30000, // Close connections after 30 seconds of inactivity
+  // Connection Timeout Settings
+  connectTimeoutMS: 10000, // 10 seconds timeout for initial connection
+  socketTimeoutMS: 45000, // 45 seconds timeout for socket operations
+  serverSelectionTimeoutMS: 10000, // 10 seconds timeout for server selection
+  // Retry Settings
+  retryWrites: true,
+  retryReads: true,
+  // Heartbeat Settings
+  heartbeatFrequencyMS: 10000, // Check server status every 10 seconds
+};
+
+mongoose.connect(MONGODB_URI, connectionOptions)
 .then(() => {
   console.log('✅ MongoDB Connected Successfully');
   console.log('Database:', mongoose.connection.name);
+  logConnectionStats();
 })
 .catch(err => {
   console.error('❌ MongoDB connection error:', err.message);
   console.error('Full error:', err);
 });
 
+// Connection monitoring function
+function logConnectionStats() {
+  const state = mongoose.connection.readyState;
+  const states = {
+    0: 'disconnected',
+    1: 'connected',
+    2: 'connecting',
+    3: 'disconnecting'
+  };
+  
+  console.log('📊 Connection State:', states[state] || 'unknown');
+  
+  // Log pool statistics if available
+  if (mongoose.connection.db && mongoose.connection.db.serverConfig) {
+    const serverConfig = mongoose.connection.db.serverConfig;
+    if (serverConfig.pool) {
+      console.log('📊 Connection Pool Stats:', {
+        size: serverConfig.pool.totalConnectionCount || 'N/A',
+        available: serverConfig.pool.availableConnectionCount || 'N/A',
+        waitQueueSize: serverConfig.pool.waitQueueSize || 'N/A'
+      });
+    }
+  }
+}
+
 // MongoDB connection event handlers
 mongoose.connection.on('error', (err) => {
-  console.error('MongoDB connection error:', err);
+  console.error('❌ MongoDB connection error:', err);
+  logConnectionStats();
 });
 
 mongoose.connection.on('disconnected', () => {
-  console.warn('MongoDB disconnected');
+  console.warn('⚠️ MongoDB disconnected');
+  logConnectionStats();
 });
 
 mongoose.connection.on('reconnected', () => {
-  console.log('MongoDB reconnected');
+  console.log('✅ MongoDB reconnected');
+  logConnectionStats();
 });
+
+mongoose.connection.on('connected', () => {
+  console.log('✅ MongoDB connected');
+  logConnectionStats();
+});
+
+// Periodic connection health check (every 5 minutes)
+setInterval(() => {
+  if (mongoose.connection.readyState === 1) {
+    logConnectionStats();
+  } else {
+    console.warn('⚠️ MongoDB connection is not ready. State:', mongoose.connection.readyState);
+  }
+}, 5 * 60 * 1000); // 5 minutes
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));

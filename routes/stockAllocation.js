@@ -68,6 +68,7 @@ router.get('/dealer/stock', verifyToken, verifyDealer, async (req, res) => {
     const dealerStocks = await DealerStock.find({ dealer: req.user._id })
       .populate('product', 'title packetPrice packetsPerStrip image')
       .populate('sourceRequest', 'strips requestedAt')
+      .lean()
       .sort({ createdAt: -1 });
 
     // Group by product
@@ -275,11 +276,29 @@ router.post('/allocate', verifyToken, verifyDealer, async (req, res) => {
 // Get Allocations for Dealer (Dealer only - view all their allocations)
 router.get('/dealer/allocations', verifyToken, verifyDealer, async (req, res) => {
   try {
-    const allocations = await StockAllocation.find({ dealer: req.user._id })
+    const { page = 1, limit = 50, salesmanId, productId } = req.query;
+    
+    const query = { dealer: req.user._id };
+    
+    if (salesmanId && mongoose.Types.ObjectId.isValid(salesmanId)) {
+      query.salesman = salesmanId;
+    }
+    if (productId && mongoose.Types.ObjectId.isValid(productId)) {
+      query.product = productId;
+    }
+    
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    
+    const allocations = await StockAllocation.find(query)
       .populate('product', 'title packetPrice packetsPerStrip image')
       .populate('salesman', 'name email')
       .populate('dealerStock', 'totalStrips allocatedStrips availableStrips')
-      .sort({ createdAt: -1 });
+      .lean()
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await StockAllocation.countDocuments(query);
 
     // Group by salesman
     const allocationsBySalesman = {};
@@ -317,6 +336,12 @@ router.get('/dealer/allocations', verifyToken, verifyDealer, async (req, res) =>
       data: { 
         allocations: Object.values(allocationsBySalesman),
         totalAllocations: allocations.length,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit)),
+        },
       },
     });
   } catch (error) {
@@ -357,6 +382,7 @@ router.get('/salesman/dealer-stock', verifyToken, verifySalesman, async (req, re
     const dealerStocks = await DealerStock.find({ dealer: dealerId })
       .populate('product', 'title packetPrice packetsPerStrip image')
       .populate('sourceRequest', 'strips requestedAt')
+      .lean()
       .sort({ createdAt: -1 });
 
     // Group by product
@@ -410,6 +436,7 @@ router.get('/salesman/stock', verifyToken, verifySalesman, async (req, res) => {
     const allocations = await StockAllocation.find({ salesman: req.user._id })
       .populate('product', 'title packetPrice packetsPerStrip image')
       .populate('dealer', 'name email')
+      .lean()
       .sort({ createdAt: -1 });
 
     // Group by product

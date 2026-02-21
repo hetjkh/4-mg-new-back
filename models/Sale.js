@@ -178,12 +178,44 @@ const saleSchema = new mongoose.Schema({
 });
 
 // Indexes for better query performance
-saleSchema.index({ salesman: 1, saleDate: -1 });
-saleSchema.index({ dealer: 1, saleDate: -1 });
+// Single field indexes
 saleSchema.index({ product: 1 });
 saleSchema.index({ saleDate: -1 });
 saleSchema.index({ paymentStatus: 1 });
+saleSchema.index({ billStatus: 1 });
+
+// Compound indexes for common query patterns
+// Dealer queries with date and status filters
+saleSchema.index({ dealer: 1, saleDate: -1, paymentStatus: 1 });
+saleSchema.index({ dealer: 1, saleDate: -1, billStatus: 1 });
+saleSchema.index({ dealer: 1, paymentStatus: 1, saleDate: -1 });
+
+// Salesman queries with date and status filters
+saleSchema.index({ salesman: 1, saleDate: -1 });
+saleSchema.index({ salesman: 1, saleDate: -1, paymentStatus: 1 });
+saleSchema.index({ salesman: 1, saleDate: -1, billStatus: 1 });
+
+// Product queries with date
+saleSchema.index({ product: 1, saleDate: -1 });
+
+// Payment status queries with date
+saleSchema.index({ paymentStatus: 1, saleDate: -1 });
+saleSchema.index({ paymentStatus: 1, dealer: 1, saleDate: -1 });
+
+// Bill status queries
+saleSchema.index({ billStatus: 1, saleDate: -1 });
+saleSchema.index({ billStatus: 1, dealer: 1, saleDate: -1 });
+
+// Invoice number queries
 saleSchema.index({ invoiceNo: 1, saleDate: -1 });
+saleSchema.index({ invoiceNo: 1, dealer: 1 });
+
+// Shopkeeper queries
+saleSchema.index({ shopkeeper: 1, saleDate: -1 });
+
+// Date range queries
+saleSchema.index({ saleDate: -1, dealer: 1 });
+saleSchema.index({ saleDate: -1, salesman: 1 });
 
 // Update updatedAt before saving
 saleSchema.pre('save', function(next) {

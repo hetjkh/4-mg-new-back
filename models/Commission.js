@@ -89,11 +89,25 @@ const commissionSchema = new mongoose.Schema({
   },
 });
 
-// Indexes
-commissionSchema.index({ salesman: 1, periodStart: -1 });
-commissionSchema.index({ dealer: 1, periodStart: -1 });
+// Indexes for better query performance
+// Single field indexes
 commissionSchema.index({ status: 1 });
+
+// Compound indexes for common query patterns
+// Salesman queries
+commissionSchema.index({ salesman: 1, periodStart: -1 });
+commissionSchema.index({ salesman: 1, status: 1, periodStart: -1 });
+
+// Dealer queries
+commissionSchema.index({ dealer: 1, periodStart: -1 });
+commissionSchema.index({ dealer: 1, status: 1, periodStart: -1 });
+
+// Period queries
 commissionSchema.index({ periodStart: 1, periodEnd: 1 });
+commissionSchema.index({ period: 1, periodStart: -1 });
+
+// Sale reference
+commissionSchema.index({ sale: 1 });
 
 // Update updatedAt before saving
 commissionSchema.pre('save', function(next) {

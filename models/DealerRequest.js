@@ -173,9 +173,50 @@ const dealerRequestSchema = new mongoose.Schema({
   }
 });
 
-// Index for faster queries
+// Indexes for faster queries
+// Single field indexes
+dealerRequestSchema.index({ status: 1 });
+dealerRequestSchema.index({ paymentStatus: 1 });
+dealerRequestSchema.index({ product: 1 });
+dealerRequestSchema.index({ orderGroupId: 1 });
+dealerRequestSchema.index({ ewayBillNo: 1 });
+
+// Compound indexes for common query patterns
+// Dealer queries with status and date
 dealerRequestSchema.index({ dealer: 1, status: 1 });
+dealerRequestSchema.index({ dealer: 1, status: 1, createdAt: -1 });
+dealerRequestSchema.index({ dealer: 1, status: 1, requestedAt: -1 });
+dealerRequestSchema.index({ dealer: 1, paymentStatus: 1, createdAt: -1 });
+dealerRequestSchema.index({ dealer: 1, paymentStatus: 1, requestedAt: -1 });
+
+// Status queries
+dealerRequestSchema.index({ status: 1, createdAt: -1 });
+dealerRequestSchema.index({ status: 1, paymentStatus: 1 });
+dealerRequestSchema.index({ status: 1, dealer: 1 });
+
+// Payment status queries
+dealerRequestSchema.index({ paymentStatus: 1, createdAt: -1 });
+dealerRequestSchema.index({ paymentStatus: 1, status: 1 });
+dealerRequestSchema.index({ paymentStatus: 1, dealer: 1 });
+
+// Product queries
 dealerRequestSchema.index({ product: 1, status: 1 });
+dealerRequestSchema.index({ product: 1, status: 1, createdAt: -1 });
+dealerRequestSchema.index({ product: 1, dealer: 1 });
+
+// Order grouping
+dealerRequestSchema.index({ orderGroupId: 1, dealer: 1 });
+
+// Date queries
+dealerRequestSchema.index({ createdAt: -1, dealer: 1 });
+dealerRequestSchema.index({ requestedAt: -1, dealer: 1 });
+
+// E-way bill queries
+dealerRequestSchema.index({ ewayBillStatus: 1 });
+
+// Processed queries
+dealerRequestSchema.index({ processedBy: 1, createdAt: -1 });
+dealerRequestSchema.index({ processedBy: 1, status: 1 });
 
 module.exports = mongoose.model('DealerRequest', dealerRequestSchema);
 

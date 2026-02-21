@@ -51,9 +51,21 @@ const dealerStockSchema = new mongoose.Schema({
   }
 });
 
-// Index for faster queries
-dealerStockSchema.index({ dealer: 1, product: 1 });
+// Indexes for faster queries
+// Single field indexes
 dealerStockSchema.index({ dealer: 1 });
+
+// Compound indexes for common query patterns
+// Dealer + Product (unique combination for stock lookup)
+dealerStockSchema.index({ dealer: 1, product: 1 });
+
+// Source request queries
+dealerStockSchema.index({ sourceRequest: 1 });
+dealerStockSchema.index({ sourceRequest: 1, dealer: 1 });
+
+// Date queries
+dealerStockSchema.index({ createdAt: -1, dealer: 1 });
+dealerStockSchema.index({ updatedAt: -1, dealer: 1 });
 
 // Virtual to calculate available strips
 dealerStockSchema.virtual('calculatedAvailable').get(function() {

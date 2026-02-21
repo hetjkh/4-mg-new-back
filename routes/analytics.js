@@ -9,6 +9,7 @@ const Product = require('../models/Product');
 const User = require('../models/User');
 const Sale = require('../models/Sale');
 const { getLanguage } = require('../middleware/translateMessages');
+const { cacheConfigs, invalidateCache } = require('../middleware/cacheMiddleware');
 
 const router = express.Router();
 
@@ -107,7 +108,7 @@ const getDateRange = (period) => {
 };
 
 // 1. Revenue Analytics Dashboard
-router.get('/revenue', verifyToken, verifyAdmin, async (req, res) => {
+router.get('/revenue', verifyToken, verifyAdmin, cacheConfigs.revenue, async (req, res) => {
   try {
     const { period = 'monthly' } = req.query;
     const { startDate, endDate } = getDateRange(period);
@@ -121,6 +122,7 @@ router.get('/revenue', verifyToken, verifyAdmin, async (req, res) => {
     .populate('product', 'title packetPrice packetsPerStrip')
     .populate('dealer', 'name email')
     .populate('salesman', 'name email')
+    .lean()
     .sort({ saleDate: 1 });
 
     // Calculate revenue by date
@@ -173,19 +175,23 @@ router.get('/revenue', verifyToken, verifyAdmin, async (req, res) => {
 });
 
 // 2. Product Performance Reports
-router.get('/products', verifyToken, verifyAdmin, async (req, res) => {
+router.get('/products', verifyToken, verifyAdmin, cacheConfigs.products, async (req, res) => {
   try {
-    const { period = 'all', sortBy = 'revenue' } = req.query;
+    const { period = 'all', sortBy = 'revenue', page = 1, limit = 50 } = req.query;
     const { startDate, endDate } = getDateRange(period);
     const language = getLanguage(req);
 
     // Get all approved sales (bills) - these are actual product sales to shopkeepers
-    const sales = await Sale.find({
-      billStatus: 'approved',
-      saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
-    })
+    const salesQuery = {
+      billStatus: 'approved'
+    };
+    if (period !== 'all') {
+      salesQuery.saleDate = { $gte: startDate, $lte: endDate };
+    }
+    const sales = await Sale.find(salesQuery)
     .populate('product', 'title packetPrice packetsPerStrip image stock')
-    .populate('dealer', 'name email');
+    .populate('dealer', 'name email')
+    .lean();
 
     // Aggregate by product
     const productStats = {};
@@ -239,7 +245,11 @@ router.get('/products', verifyToken, verifyAdmin, async (req, res) => {
       }
     });
 
-    // Get best and worst sellers
+    // Apply pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const paginatedProducts = products.slice(skip, skip + parseInt(limit));
+
+    // Get best and worst sellers (top 10)
     const bestSellers = products.slice(0, 10);
     const worstSellers = products.slice(-10).reverse();
 
@@ -248,9 +258,15 @@ router.get('/products', verifyToken, verifyAdmin, async (req, res) => {
       data: {
         period,
         totalProducts: products.length,
-        products,
+        products: paginatedProducts,
         bestSellers,
         worstSellers: worstSellers,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: products.length,
+          pages: Math.ceil(products.length / parseInt(limit)),
+        },
         summary: {
           totalRevenue: products.reduce((sum, p) => sum + p.totalRevenue, 0),
           totalStrips: products.reduce((sum, p) => sum + p.totalStrips, 0),
@@ -269,19 +285,23 @@ router.get('/products', verifyToken, verifyAdmin, async (req, res) => {
 });
 
 // 3. Dealer Performance Rankings
-router.get('/dealers', verifyToken, verifyAdmin, async (req, res) => {
+router.get('/dealers', verifyToken, verifyAdmin, cacheConfigs.dealers, async (req, res) => {
   try {
-    const { period = 'all', sortBy = 'revenue' } = req.query;
+    const { period = 'all', sortBy = 'revenue', page = 1, limit = 50 } = req.query;
     const { startDate, endDate } = getDateRange(period);
 
     // Get all approved sales (bills) - these are actual sales through dealers' salesmen
-    const sales = await Sale.find({
-      billStatus: 'approved',
-      saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
-    })
+    const salesQuery = {
+      billStatus: 'approved'
+    };
+    if (period !== 'all') {
+      salesQuery.saleDate = { $gte: startDate, $lte: endDate };
+    }
+    const sales = await Sale.find(salesQuery)
     .populate('product', 'title packetPrice packetsPerStrip')
     .populate('dealer', 'name email')
-    .populate('salesman', 'name email');
+    .populate('salesman', 'name email')
+    .lean();
 
     // Aggregate by dealer
     const dealerStats = {};
@@ -362,17 +382,21 @@ router.get('/dealers', verifyToken, verifyAdmin, async (req, res) => {
     });
 
     // Get pending and rejected bills for dealers
-    const pendingSales = await Sale.find({
-      billStatus: 'pending',
-      saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
-    })
-    .populate('dealer', 'name email');
+    const pendingQuery = { billStatus: 'pending' };
+    if (period !== 'all') {
+      pendingQuery.saleDate = { $gte: startDate, $lte: endDate };
+    }
+    const pendingSales = await Sale.find(pendingQuery)
+    .populate('dealer', 'name email')
+    .lean();
 
-    const rejectedSales = await Sale.find({
-      billStatus: 'rejected',
-      saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
-    })
-    .populate('dealer', 'name email');
+    const rejectedQuery = { billStatus: 'rejected' };
+    if (period !== 'all') {
+      rejectedQuery.saleDate = { $gte: startDate, $lte: endDate };
+    }
+    const rejectedSales = await Sale.find(rejectedQuery)
+    .populate('dealer', 'name email')
+    .lean();
 
     pendingSales.forEach(sale => {
       const dealerId = sale.dealer._id.toString();
@@ -416,13 +440,23 @@ router.get('/dealers', verifyToken, verifyAdmin, async (req, res) => {
       }
     });
 
+    // Apply pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const paginatedDealers = dealers.slice(skip, skip + parseInt(limit));
+
     res.json({
       success: true,
       data: {
         period,
         totalDealers: dealers.length,
-        dealers,
+        dealers: paginatedDealers,
         topPerformers: dealers.slice(0, 10),
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: dealers.length,
+          pages: Math.ceil(dealers.length / parseInt(limit)),
+        },
         summary: {
           totalRevenue: dealers.reduce((sum, d) => sum + d.totalRevenue, 0),
           totalStrips: dealers.reduce((sum, d) => sum + d.totalStrips, 0),
@@ -441,16 +475,18 @@ router.get('/dealers', verifyToken, verifyAdmin, async (req, res) => {
 });
 
 // 4. Salesman Performance Tracking
-router.get('/salesmen', verifyToken, verifyAdmin, async (req, res) => {
+router.get('/salesmen', verifyToken, verifyAdmin, cacheConfigs.salesmen, async (req, res) => {
   try {
-    const { dealerId, period = 'all' } = req.query;
+    const { dealerId, period = 'all', page = 1, limit = 50 } = req.query;
     const { startDate, endDate } = getDateRange(period);
 
     // Build query for approved sales (bills)
     const query = {
-      billStatus: 'approved',
-      saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
+      billStatus: 'approved'
     };
+    if (period !== 'all') {
+      query.saleDate = { $gte: startDate, $lte: endDate };
+    }
     if (dealerId) {
       const dealer = await User.findById(dealerId);
       if (!dealer) {
@@ -467,6 +503,7 @@ router.get('/salesmen', verifyToken, verifyAdmin, async (req, res) => {
     .populate('salesman', 'name email')
     .populate('dealer', 'name email')
     .populate('product', 'title packetPrice packetsPerStrip')
+    .lean()
     .sort({ saleDate: -1 });
 
     // Aggregate by salesman
@@ -511,14 +548,24 @@ router.get('/salesmen', verifyToken, verifyAdmin, async (req, res) => {
     // Sort by total value
     salesmen.sort((a, b) => b.totalValue - a.totalValue);
 
+    // Apply pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const paginatedSalesmen = salesmen.slice(skip, skip + parseInt(limit));
+
     res.json({
       success: true,
       data: {
         period,
         dealerId: dealerId || null,
         totalSalesmen: salesmen.length,
-        salesmen,
+        salesmen: paginatedSalesmen,
         topPerformers: salesmen.slice(0, 10),
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: salesmen.length,
+          pages: Math.ceil(salesmen.length / parseInt(limit)),
+        },
         summary: {
           totalStrips: salesmen.reduce((sum, s) => sum + s.totalStrips, 0),
           totalValue: salesmen.reduce((sum, s) => sum + s.totalValue, 0),
@@ -537,17 +584,19 @@ router.get('/salesmen', verifyToken, verifyAdmin, async (req, res) => {
 });
 
 // 5. Stock Movement Reports
-router.get('/stock-movement', verifyToken, verifyAdmin, async (req, res) => {
+router.get('/stock-movement', verifyToken, verifyAdmin, cacheConfigs.stockMovement, async (req, res) => {
   try {
-    const { period = 'all', productId } = req.query;
+    const { period = 'all', productId, page = 1, limit = 50 } = req.query;
     const { startDate, endDate } = getDateRange(period);
     const language = getLanguage(req);
 
     // Get stock in (approved requests)
     const stockInQuery = {
-      status: 'approved',
-      processedAt: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
+      status: 'approved'
     };
+    if (period !== 'all') {
+      stockInQuery.processedAt = { $gte: startDate, $lte: endDate };
+    }
     if (productId) {
       stockInQuery.product = productId;
     }
@@ -555,12 +604,14 @@ router.get('/stock-movement', verifyToken, verifyAdmin, async (req, res) => {
     const stockIn = await DealerRequest.find(stockInQuery)
       .populate('product', 'title packetPrice packetsPerStrip')
       .populate('dealer', 'name email')
+      .lean()
       .sort({ processedAt: -1 });
 
     // Get stock out (allocations to salesmen)
-    const stockOutQuery = {
-      createdAt: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
-    };
+    const stockOutQuery = {};
+    if (period !== 'all') {
+      stockOutQuery.createdAt = { $gte: startDate, $lte: endDate };
+    }
     if (productId) {
       stockOutQuery.product = productId;
     }
@@ -569,6 +620,7 @@ router.get('/stock-movement', verifyToken, verifyAdmin, async (req, res) => {
       .populate('product', 'title packetPrice packetsPerStrip')
       .populate('dealer', 'name email')
       .populate('salesman', 'name email')
+      .lean()
       .sort({ createdAt: -1 });
 
     // Calculate totals
@@ -580,6 +632,10 @@ router.get('/stock-movement', verifyToken, verifyAdmin, async (req, res) => {
     const productMovement = {};
 
     stockIn.forEach(request => {
+      // Skip if product is null (deleted product)
+      if (!request.product || !request.product._id) {
+        return;
+      }
       const productId = request.product._id.toString();
       if (!productMovement[productId]) {
         productMovement[productId] = {
@@ -598,6 +654,10 @@ router.get('/stock-movement', verifyToken, verifyAdmin, async (req, res) => {
     });
 
     stockOut.forEach(allocation => {
+      // Skip if product is null (deleted product)
+      if (!allocation.product || !allocation.product._id) {
+        return;
+      }
       const productId = allocation.product._id.toString();
       if (!productMovement[productId]) {
         productMovement[productId] = {
@@ -633,6 +693,16 @@ router.get('/stock-movement', verifyToken, verifyAdmin, async (req, res) => {
 
     movements.sort((a, b) => b.stockIn - a.stockIn);
 
+    // Apply pagination to movements
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const paginatedMovements = movements.slice(skip, skip + parseInt(limit));
+
+    // Paginate stock records
+    const stockInSkip = (parseInt(page) - 1) * parseInt(limit);
+    const stockOutSkip = (parseInt(page) - 1) * parseInt(limit);
+    const paginatedStockIn = stockIn.slice(stockInSkip, stockInSkip + parseInt(limit));
+    const paginatedStockOut = stockOut.slice(stockOutSkip, stockOutSkip + parseInt(limit));
+
     res.json({
       success: true,
       data: {
@@ -642,9 +712,15 @@ router.get('/stock-movement', verifyToken, verifyAdmin, async (req, res) => {
         totalStockOut,
         netMovement: totalStockIn - totalStockOut,
         turnover,
-        movements,
-        stockInRecords: stockIn.slice(0, 50), // Limit records
-        stockOutRecords: stockOut.slice(0, 50),
+        movements: paginatedMovements,
+        stockInRecords: paginatedStockIn,
+        stockOutRecords: paginatedStockOut,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: movements.length,
+          pages: Math.ceil(movements.length / parseInt(limit)),
+        },
       }
     });
   } catch (error) {
@@ -658,18 +734,22 @@ router.get('/stock-movement', verifyToken, verifyAdmin, async (req, res) => {
 });
 
 // 6. Location-based Sales Analytics
-router.get('/locations', verifyToken, verifyAdmin, async (req, res) => {
+router.get('/locations', verifyToken, verifyAdmin, cacheConfigs.locations, async (req, res) => {
   try {
-    const { period = 'all' } = req.query;
+    const { period = 'all', page = 1, limit = 50 } = req.query;
     const { startDate, endDate } = getDateRange(period);
 
     // Get all location allocations
-    const allocations = await LocationAllocation.find({
-      status: 'active',
-      createdAt: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
-    })
+    const locationAllocationsQuery = {
+      status: 'active'
+    };
+    if (period !== 'all') {
+      locationAllocationsQuery.createdAt = { $gte: startDate, $lte: endDate };
+    }
+    const allocations = await LocationAllocation.find(locationAllocationsQuery)
     .populate('allocatedTo', 'name email role')
-    .populate('allocatedBy', 'name email');
+    .populate('allocatedBy', 'name email')
+    .lean();
 
     // Get dealers with locations
     const dealersWithLocations = {};
@@ -724,14 +804,18 @@ router.get('/locations', verifyToken, verifyAdmin, async (req, res) => {
     });
 
     // Get approved sales (bills) by location - these are actual sales to shopkeepers
-    const sales = await Sale.find({
+    const locationSalesQuery = {
       billStatus: 'approved',
-      saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {},
       'location.district': { $exists: true, $ne: '' }
-    })
+    };
+    if (period !== 'all') {
+      locationSalesQuery.saleDate = { $gte: startDate, $lte: endDate };
+    }
+    const sales = await Sale.find(locationSalesQuery)
     .populate('dealer', 'name email')
     .populate('salesman', 'name email')
-    .populate('product', 'title packetPrice packetsPerStrip');
+    .populate('product', 'title packetPrice packetsPerStrip')
+    .lean();
 
     // Aggregate by district from actual sales
     const districtStats = {};
@@ -804,13 +888,23 @@ router.get('/locations', verifyToken, verifyAdmin, async (req, res) => {
 
     locations.sort((a, b) => b.totalRevenue - a.totalRevenue);
 
+    // Apply pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const paginatedLocations = locations.slice(skip, skip + parseInt(limit));
+
     res.json({
       success: true,
       data: {
         period,
         totalDistricts: locations.length,
-        locations,
+        locations: paginatedLocations,
         topDistricts: locations.slice(0, 10),
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: locations.length,
+          pages: Math.ceil(locations.length / parseInt(limit)),
+        },
         summary: {
           totalDealers: Object.keys(dealersWithLocations).length,
           totalSalesmen: Object.keys(salesmenWithLocations).length,
@@ -847,6 +941,7 @@ router.get('/export', verifyToken, verifyAdmin, async (req, res) => {
         })
         .populate('product', 'title packetPrice packetsPerStrip')
         .populate('dealer', 'name email')
+        .lean()
         .sort({ saleDate: 1 });
 
         const revenueByDate = {};
@@ -880,12 +975,16 @@ router.get('/export', verifyToken, verifyAdmin, async (req, res) => {
       }
       case 'products': {
         const { startDate, endDate } = getDateRange(period);
-        const sales = await Sale.find({
-          billStatus: 'approved',
-          saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
-        })
+        const productsSalesQuery = {
+          billStatus: 'approved'
+        };
+        if (period !== 'all') {
+          productsSalesQuery.saleDate = { $gte: startDate, $lte: endDate };
+        }
+        const sales = await Sale.find(productsSalesQuery)
         .populate('product', 'title packetPrice packetsPerStrip image stock')
-        .populate('dealer', 'name email');
+        .populate('dealer', 'name email')
+        .lean();
 
         const productStats = {};
         sales.forEach(sale => {
@@ -918,12 +1017,16 @@ router.get('/export', verifyToken, verifyAdmin, async (req, res) => {
       }
       case 'dealers': {
         const { startDate, endDate } = getDateRange(period);
-        const sales = await Sale.find({
-          billStatus: 'approved',
-          saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
-        })
+        const dealersSalesQuery = {
+          billStatus: 'approved'
+        };
+        if (period !== 'all') {
+          dealersSalesQuery.saleDate = { $gte: startDate, $lte: endDate };
+        }
+        const sales = await Sale.find(dealersSalesQuery)
         .populate('product', 'title packetPrice packetsPerStrip')
-        .populate('dealer', 'name email');
+        .populate('dealer', 'name email')
+        .lean();
 
         const dealerStats = {};
         sales.forEach(sale => {
@@ -955,13 +1058,17 @@ router.get('/export', verifyToken, verifyAdmin, async (req, res) => {
       }
       case 'salesmen': {
         const { startDate, endDate } = getDateRange(period);
-        const sales = await Sale.find({
-          billStatus: 'approved',
-          saleDate: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
-        })
+        const salesmenSalesQuery = {
+          billStatus: 'approved'
+        };
+        if (period !== 'all') {
+          salesmenSalesQuery.saleDate = { $gte: startDate, $lte: endDate };
+        }
+        const sales = await Sale.find(salesmenSalesQuery)
         .populate('salesman', 'name email')
         .populate('dealer', 'name email')
-        .populate('product', 'title packetPrice packetsPerStrip');
+        .populate('product', 'title packetPrice packetsPerStrip')
+        .lean();
 
         const salesmanStats = {};
         sales.forEach(sale => {
@@ -998,16 +1105,23 @@ router.get('/export', verifyToken, verifyAdmin, async (req, res) => {
       }
       case 'stock': {
         const { startDate, endDate } = getDateRange(period);
-        const stockIn = await DealerRequest.find({
-          status: 'approved',
-          processedAt: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
-        })
-        .populate('product', 'title packetPrice packetsPerStrip');
+        const exportStockInQuery = {
+          status: 'approved'
+        };
+        if (period !== 'all') {
+          exportStockInQuery.processedAt = { $gte: startDate, $lte: endDate };
+        }
+        const stockIn = await DealerRequest.find(exportStockInQuery)
+        .populate('product', 'title packetPrice packetsPerStrip')
+        .lean();
 
-        const stockOut = await StockAllocation.find({
-          createdAt: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
-        })
-        .populate('product', 'title packetPrice packetsPerStrip');
+        const exportStockOutQuery = {};
+        if (period !== 'all') {
+          exportStockOutQuery.createdAt = { $gte: startDate, $lte: endDate };
+        }
+        const stockOut = await StockAllocation.find(exportStockOutQuery)
+        .populate('product', 'title packetPrice packetsPerStrip')
+        .lean();
 
         const totalStockIn = stockIn.reduce((sum, r) => sum + r.strips, 0);
         const totalStockOut = stockOut.reduce((sum, a) => sum + a.strips, 0);
@@ -1027,7 +1141,8 @@ router.get('/export', verifyToken, verifyAdmin, async (req, res) => {
           status: 'active',
           createdAt: period !== 'all' ? { $gte: startDate, $lte: endDate } : {}
         })
-        .populate('allocatedTo', 'name email role');
+        .populate('allocatedTo', 'name email role')
+        .lean();
 
         const districtStats = {};
         allocations.forEach(allocation => {

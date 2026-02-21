@@ -107,12 +107,44 @@ const paymentSchema = new mongoose.Schema({
 });
 
 // Indexes for better query performance
-paymentSchema.index({ dealer: 1, createdAt: -1 });
+// Single field indexes
 paymentSchema.index({ status: 1 });
 paymentSchema.index({ type: 1 });
 paymentSchema.index({ transactionDate: -1 });
 paymentSchema.index({ upiTransactionId: 1 });
 paymentSchema.index({ reconciled: 1 });
+
+// Compound indexes for common query patterns
+// Dealer queries with status and date
+paymentSchema.index({ dealer: 1, status: 1, transactionDate: -1 });
+paymentSchema.index({ dealer: 1, status: 1, createdAt: -1 });
+paymentSchema.index({ dealer: 1, type: 1, transactionDate: -1 });
+paymentSchema.index({ dealer: 1, type: 1, createdAt: -1 });
+paymentSchema.index({ dealer: 1, createdAt: -1 });
+
+// Status queries with date
+paymentSchema.index({ status: 1, transactionDate: -1 });
+paymentSchema.index({ status: 1, createdAt: -1 });
+paymentSchema.index({ status: 1, dealer: 1 });
+
+// Type queries
+paymentSchema.index({ type: 1, transactionDate: -1 });
+paymentSchema.index({ type: 1, status: 1 });
+
+// DealerRequest queries
+paymentSchema.index({ dealerRequest: 1, status: 1 });
+paymentSchema.index({ dealerRequest: 1 });
+
+// Reconciliation queries
+paymentSchema.index({ reconciled: 1, transactionDate: -1 });
+paymentSchema.index({ reconciled: 1, dealer: 1 });
+
+// Payment method queries
+paymentSchema.index({ paymentMethod: 1, transactionDate: -1 });
+paymentSchema.index({ paymentMethod: 1, dealer: 1 });
+
+// Transaction ID lookups
+paymentSchema.index({ bankTransactionId: 1 });
 
 // Update updatedAt before saving
 paymentSchema.pre('save', function(next) {

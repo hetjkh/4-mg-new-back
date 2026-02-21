@@ -109,7 +109,7 @@ router.post('/', verifyToken, verifySalesman, async (req, res) => {
 // List shopkeepers (salesman only)
 router.get('/', verifyToken, verifySalesman, async (req, res) => {
   try {
-    const { search, isActive } = req.query;
+    const { search, isActive, page = 1, limit = 50 } = req.query;
     const query = { salesman: req.user._id };
 
     if (isActive !== undefined) {
@@ -127,12 +127,25 @@ router.get('/', verifyToken, verifySalesman, async (req, res) => {
       ];
     }
 
-    const shopkeepers = await Shopkeeper.find(query).sort({ createdAt: -1 });
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const shopkeepers = await Shopkeeper.find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Shopkeeper.countDocuments(query);
 
     res.json({
       success: true,
       data: {
         shopkeepers: shopkeepers.map((s) => (s.toJSON ? s.toJSON() : s)),
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit)),
+        },
       },
     });
   } catch (error) {

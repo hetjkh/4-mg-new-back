@@ -255,6 +255,12 @@ router.post('/', verifyToken, async (req, res) => {
     await sale.populate('dealer', 'name email');
     await sale.populate('product', 'title packetPrice packetsPerStrip image');
 
+    // Invalidate cache for sales reports and analytics
+    const { invalidateCache } = require('../middleware/cacheMiddleware');
+    invalidateCache('sales:*');
+    invalidateCache('analytics:*');
+    invalidateCache('dashboard:*');
+
     // Update sales target if exists
     await updateSalesTarget(salesman._id, dealer._id, totalAmount, strips);
 
@@ -383,6 +389,7 @@ router.get('/', verifyToken, async (req, res) => {
       .populate('dealer', 'name email')
       .populate('product', 'title packetPrice packetsPerStrip image')
       .populate('shopkeeper', 'name phone email location')
+      .lean()
       .sort({ saleDate: -1, createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -451,7 +458,8 @@ router.get('/:id', verifyToken, async (req, res) => {
       .populate('salesman', 'name email')
       .populate('dealer', 'name email')
       .populate('product', 'title packetPrice packetsPerStrip image')
-      .populate('shopkeeper', 'name phone email location');
+      .populate('shopkeeper', 'name phone email location')
+      .lean();
 
     if (!sale) {
       return res.status(404).json({ 
@@ -578,6 +586,13 @@ router.put('/:id', verifyToken, async (req, res) => {
     }
 
     await sale.save();
+    
+    // Invalidate cache for sales reports and analytics
+    const { invalidateCache } = require('../middleware/cacheMiddleware');
+    invalidateCache('sales:*');
+    invalidateCache('analytics:*');
+    invalidateCache('dashboard:*');
+    
     await sale.populate('salesman', 'name email');
     await sale.populate('dealer', 'name email');
     await sale.populate('product', 'title packetPrice packetsPerStrip image');
@@ -759,6 +774,7 @@ router.post('/bill', verifyToken, verifySalesman, async (req, res) => {
       .populate('dealer', 'name email')
       .populate('product', 'title packetPrice packetsPerStrip image')
       .populate('shopkeeper', 'name phone email location')
+      .lean()
       .sort({ createdAt: 1 });
 
     const transformedSales = populatedSales.map((sale) => {
@@ -804,7 +820,7 @@ router.post('/bill', verifyToken, verifySalesman, async (req, res) => {
 // ==================== SALES REPORTS ====================
 
 // Get Sales Report
-router.get('/reports/summary', verifyToken, async (req, res) => {
+router.get('/reports/summary', verifyToken, require('../middleware/cacheMiddleware').cacheConfigs.salesReport, async (req, res) => {
   try {
     const { period = 'monthly', salesmanId, dealerId, startDate, endDate } = req.query;
 
@@ -850,7 +866,8 @@ router.get('/reports/summary', verifyToken, async (req, res) => {
     // Get sales data
     const sales = await Sale.find(query)
       .populate('salesman', 'name email')
-      .populate('product', 'title');
+      .populate('product', 'title')
+      .lean();
 
     // Calculate summary
     const totalSales = sales.length;
@@ -1082,6 +1099,7 @@ router.get('/targets', verifyToken, async (req, res) => {
     const targets = await SalesTarget.find(query)
       .populate('salesman', 'name email')
       .populate('dealer', 'name email')
+      .lean()
       .sort({ periodStart: -1 });
 
     const transformedTargets = targets.map(target => {
@@ -1385,6 +1403,7 @@ router.get('/commissions', verifyToken, async (req, res) => {
       .populate('salesman', 'name email')
       .populate('dealer', 'name email')
       .populate('paidBy', 'name email')
+      .lean()
       .sort({ periodStart: -1 });
 
     const transformedCommissions = commissions.map(commission => {
@@ -1506,6 +1525,8 @@ router.put('/commissions/:id/status', verifyToken, verifyDealer, async (req, res
 // Get bills pending approval (Dealer only)
 router.get('/bills/pending', verifyToken, verifyDealer, async (req, res) => {
   try {
+    const { page = 1, limit = 50 } = req.query;
+    
     const bills = await Sale.aggregate([
       {
         $match: {
@@ -1514,31 +1535,40 @@ router.get('/bills/pending', verifyToken, verifyDealer, async (req, res) => {
           billStatus: 'pending',
         },
       },
-      // Lookup product
+      // Lookup product (only needed fields)
       {
         $lookup: {
           from: 'products',
           localField: 'product',
           foreignField: '_id',
           as: 'productData',
+          pipeline: [
+            { $project: { title: 1, packetPrice: 1, packetsPerStrip: 1, image: 1 } }
+          ],
         },
       },
-      // Lookup salesman
+      // Lookup salesman (only needed fields)
       {
         $lookup: {
           from: 'users',
           localField: 'salesman',
           foreignField: '_id',
           as: 'salesmanData',
+          pipeline: [
+            { $project: { name: 1, email: 1 } }
+          ],
         },
       },
-      // Lookup shopkeeper
+      // Lookup shopkeeper (only needed fields)
       {
         $lookup: {
           from: 'shopkeepers',
           localField: 'shopkeeper',
           foreignField: '_id',
           as: 'shopkeeperData',
+          pipeline: [
+            { $project: { name: 1, phone: 1, email: 1, location: 1 } }
+          ],
         },
       },
       // Unwind product (take first element or null)
@@ -1617,6 +1647,8 @@ router.get('/bills/pending', verifyToken, verifyDealer, async (req, res) => {
 // Get bills approved (Dealer only)
 router.get('/bills/approved', verifyToken, verifyDealer, async (req, res) => {
   try {
+    const { page = 1, limit = 50 } = req.query;
+    
     const bills = await Sale.aggregate([
       {
         $match: {
@@ -1625,31 +1657,40 @@ router.get('/bills/approved', verifyToken, verifyDealer, async (req, res) => {
           billStatus: 'approved',
         },
       },
-      // Lookup product
+      // Lookup product (only needed fields)
       {
         $lookup: {
           from: 'products',
           localField: 'product',
           foreignField: '_id',
           as: 'productData',
+          pipeline: [
+            { $project: { title: 1, packetPrice: 1, packetsPerStrip: 1, image: 1 } }
+          ],
         },
       },
-      // Lookup salesman
+      // Lookup salesman (only needed fields)
       {
         $lookup: {
           from: 'users',
           localField: 'salesman',
           foreignField: '_id',
           as: 'salesmanData',
+          pipeline: [
+            { $project: { name: 1, email: 1 } }
+          ],
         },
       },
-      // Lookup shopkeeper
+      // Lookup shopkeeper (only needed fields)
       {
         $lookup: {
           from: 'shopkeepers',
           localField: 'shopkeeper',
           foreignField: '_id',
           as: 'shopkeeperData',
+          pipeline: [
+            { $project: { name: 1, phone: 1, email: 1, location: 1 } }
+          ],
         },
       },
       // Unwind product (take first element or null)
@@ -1713,6 +1754,12 @@ router.get('/bills/approved', verifyToken, verifyDealer, async (req, res) => {
       success: true,
       data: {
         bills: formattedBills,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit)),
+        },
       },
     });
   } catch (error) {
@@ -1752,6 +1799,12 @@ router.put('/bills/:invoiceNo/approve', verifyToken, verifyDealer, async (req, r
         billApprovedAt: new Date(),
       }
     );
+
+    // Invalidate cache for sales reports and analytics
+    const { invalidateCache } = require('../middleware/cacheMiddleware');
+    invalidateCache('sales:*');
+    invalidateCache('analytics:*');
+    invalidateCache('dashboard:*');
 
     res.json({
       success: true,
@@ -1853,6 +1906,12 @@ router.put('/bills/:invoiceNo/reject', verifyToken, verifyDealer, async (req, re
         billRejectionReason: reason || '',
       }
     );
+
+    // Invalidate cache for sales reports and analytics
+    const { invalidateCache } = require('../middleware/cacheMiddleware');
+    invalidateCache('sales:*');
+    invalidateCache('analytics:*');
+    invalidateCache('dashboard:*');
 
     res.json({
       success: true,

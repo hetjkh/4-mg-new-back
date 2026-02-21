@@ -1,5 +1,6 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const Product = require('../models/Product');
 const User = require('../models/User');
 const { translateMessage, getLanguage } = require('../middleware/translateMessages');
@@ -152,14 +153,44 @@ router.post('/', verifyToken, verifyAdmin, async (req, res) => {
 router.get('/', verifyToken, async (req, res) => {
   try {
     const language = getLanguage(req);
-    const products = await Product.find()
+    const { page = 1, limit = 50, search, createdBy } = req.query;
+    
+    const query = {};
+    
+    if (search) {
+      query.$or = [
+        { 'title.en': { $regex: search, $options: 'i' } },
+        { 'title.gu': { $regex: search, $options: 'i' } },
+        { 'description.en': { $regex: search, $options: 'i' } },
+        { 'description.gu': { $regex: search, $options: 'i' } },
+      ];
+    }
+    
+    if (createdBy && mongoose.Types.ObjectId.isValid(createdBy)) {
+      query.createdBy = createdBy;
+    }
+    
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    
+    const products = await Product.find(query)
       .populate('createdBy', 'name email')
-      .sort({ createdAt: -1 });
+      .lean()
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Product.countDocuments(query);
 
     res.json({
       success: true,
       data: {
         products: products.map(product => formatProduct(product, language)),
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit)),
+        },
       },
     });
   } catch (error) {
@@ -177,7 +208,8 @@ router.get('/:id', verifyToken, async (req, res) => {
   try {
     const language = getLanguage(req);
     const product = await Product.findById(req.params.id)
-      .populate('createdBy', 'name email');
+      .populate('createdBy', 'name email')
+      .lean();
 
     if (!product) {
       return res.status(404).json({ 

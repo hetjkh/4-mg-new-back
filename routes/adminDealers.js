@@ -1,5 +1,6 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 
 const router = express.Router();
@@ -50,12 +51,34 @@ const verifyAdmin = (req, res, next) => {
 // Get All Dealers (Admin - all dealers including admin-created ones)
 router.get('/', verifyToken, verifyAdmin, async (req, res) => {
   try {
-    const dealers = await User.find({ 
+    const { page = 1, limit = 50, search, createdBy } = req.query;
+    
+    const query = { 
       role: { $in: ['dealer', 'dellear'] }
-    })
+    };
+    
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+      ];
+    }
+    
+    if (createdBy && mongoose.Types.ObjectId.isValid(createdBy)) {
+      query.createdBy = createdBy;
+    }
+    
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    
+    const dealers = await User.find(query)
       .select('-password')
       .populate('createdBy', 'name email role')
-      .sort({ createdAt: -1 });
+      .lean()
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await User.countDocuments(query);
 
     res.json({
       success: true,
@@ -74,6 +97,12 @@ router.get('/', verifyToken, verifyAdmin, async (req, res) => {
             role: dealer.createdBy.role,
           } : null,
         })),
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit)),
+        },
       },
     });
   } catch (error) {

@@ -54,5 +54,16 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
+// Indexes for faster queries
+// Role queries (for filtering users by role)
+userSchema.index({ role: 1, createdAt: -1 });
+userSchema.index({ role: 1, createdBy: 1 });
+
+// CreatedBy queries (for finding salesmen by dealer, dealers by stalkist)
+userSchema.index({ createdBy: 1, role: 1 });
+userSchema.index({ createdBy: 1 });
+
+// Email is already unique, so it has an index automatically
+
 module.exports = mongoose.model('User', userSchema);
 

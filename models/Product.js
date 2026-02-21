@@ -59,5 +59,14 @@ productSchema.pre('validate', function (next) {
   next();
 });
 
+// Indexes for faster queries
+// CreatedBy queries (for filtering products by creator)
+productSchema.index({ createdBy: 1 });
+productSchema.index({ createdBy: 1, createdAt: -1 });
+
+// Date queries
+productSchema.index({ createdAt: -1 });
+productSchema.index({ updatedAt: -1 });
+
 module.exports = mongoose.model('Product', productSchema);
 

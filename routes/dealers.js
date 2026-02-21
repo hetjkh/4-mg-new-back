@@ -50,12 +50,29 @@ const verifyStalkist = (req, res, next) => {
 // Get All Dealers (Stalkist can only see dealers they created)
 router.get('/', verifyToken, verifyStalkist, async (req, res) => {
   try {
-    const dealers = await User.find({ 
+    const { page = 1, limit = 50, search } = req.query;
+    
+    const query = { 
       role: { $in: ['dealer', 'dellear'] },
       createdBy: req.user._id 
-    })
+    };
+    
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+      ];
+    }
+    
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    
+    const dealers = await User.find(query)
       .select('-password')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await User.countDocuments(query);
 
     res.json({
       success: true,
@@ -68,6 +85,12 @@ router.get('/', verifyToken, verifyStalkist, async (req, res) => {
           createdAt: dealer.createdAt,
           updatedAt: dealer.updatedAt,
         })),
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit)),
+        },
       },
     });
   } catch (error) {

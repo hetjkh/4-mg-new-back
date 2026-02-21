@@ -194,6 +194,17 @@ router.post('/', verifyToken, verifyDealer, async (req, res) => {
 router.get('/', verifyToken, async (req, res) => {
   try {
     const language = getLanguage(req);
+    const { 
+      page = 1, 
+      limit = 50,
+      status,
+      paymentStatus,
+      productId,
+      startDate,
+      endDate,
+      orderGroupId
+    } = req.query;
+    
     let query = {};
     
     if (req.user.role === 'dealer' || req.user.role === 'dellear') {
@@ -205,13 +216,43 @@ router.get('/', verifyToken, async (req, res) => {
       query.dealer = { $in: dealerIds };
     }
 
+    // Additional filters
+    if (status) {
+      query.status = status;
+    }
+    if (paymentStatus) {
+      query.paymentStatus = paymentStatus;
+    }
+    if (productId && mongoose.Types.ObjectId.isValid(productId)) {
+      query.product = productId;
+    }
+    if (orderGroupId) {
+      query.orderGroupId = orderGroupId;
+    }
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) {
+        query.createdAt.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        query.createdAt.$lte = new Date(endDate);
+      }
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
     const requests = await DealerRequest.find(query)
       .populate('product', 'title packetPrice initialPacketPrice packetsPerStrip image stock')
       .populate('dealer', 'name email')
       .populate('processedBy', 'name email')
       .populate('paymentVerifiedBy', 'name email')
       .populate('billSentBy', 'name email')
-      .sort({ createdAt: -1 });
+      .lean()
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await DealerRequest.countDocuments(query);
 
     // Transform requests to ensure all IDs are properly mapped and format product titles
     const transformedRequests = requests.map(request => {
@@ -245,7 +286,15 @@ router.get('/', verifyToken, async (req, res) => {
 
     res.json({
       success: true,
-      data: { requests: transformedRequests },
+      data: { 
+        requests: transformedRequests,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit)),
+        },
+      },
     });
   } catch (error) {
     console.error('Get dealer requests error:', error);
@@ -326,7 +375,8 @@ router.get('/:id', verifyToken, async (req, res) => {
       .populate('dealer', 'name email')
       .populate('processedBy', 'name email')
       .populate('paymentVerifiedBy', 'name email')
-      .populate('billSentBy', 'name email');
+      .populate('billSentBy', 'name email')
+      .lean();
 
     if (!request) {
       return res.status(404).json({ 
@@ -490,7 +540,7 @@ router.put('/:id/verify-payment', verifyToken, verifyAdmin, async (req, res) => 
     }
 
     const request = await DealerRequest.findById(req.params.id)
-      .populate('product');
+      .populate('product', 'title packetPrice initialPacketPrice packetsPerStrip image');
 
     if (!request) {
       return res.status(404).json({ 
@@ -639,7 +689,7 @@ router.put('/:id/approve', verifyToken, verifyAdmin, async (req, res) => {
     }
 
     const request = await DealerRequest.findById(req.params.id)
-      .populate('product');
+      .populate('product', 'title packetPrice initialPacketPrice packetsPerStrip image');
 
     if (!request) {
       return res.status(404).json({ 
@@ -863,7 +913,8 @@ router.put('/:id/send-bill/grouped', verifyToken, verifyAdmin, async (req, res) 
     // Find all requests in the group
     const requests = await DealerRequest.find({ _id: { $in: requestIds } })
       .populate('product', 'title packetPrice initialPacketPrice packetsPerStrip image')
-      .populate('dealer', 'name email');
+      .populate('dealer', 'name email')
+      .lean();
 
     if (requests.length === 0) {
       return res.status(404).json({ 
@@ -1167,7 +1218,8 @@ router.get('/dealer/:dealerId/stats', verifyToken, verifyStalkist, async (req, r
 
     // Get all requests for this dealer
     const requests = await DealerRequest.find({ dealer: dealerId })
-      .populate('product', 'title packetPrice initialPacketPrice packetsPerStrip');
+      .populate('product', 'title packetPrice initialPacketPrice packetsPerStrip')
+      .lean();
 
     // Calculate statistics
     const totalRequests = requests.length;
@@ -1307,7 +1359,8 @@ router.get('/:id/bill', verifyToken, verifyAdmin, async (req, res) => {
     const request = await DealerRequest.findById(req.params.id)
       .populate('product', 'title packetPrice initialPacketPrice packetsPerStrip image')
       .populate('dealer', 'name email')
-      .populate('processedBy', 'name email');
+      .populate('processedBy', 'name email')
+      .lean();
 
     if (!request) {
       return res.status(404).json({ 
@@ -1632,7 +1685,8 @@ router.post('/:id/ewaybill', verifyToken, verifyAdmin, async (req, res) => {
     const { id } = req.params;
     const request = await DealerRequest.findById(id)
       .populate('dealer', 'name email')
-      .populate('product', 'title packetPrice initialPacketPrice packetsPerStrip');
+      .populate('product', 'title packetPrice initialPacketPrice packetsPerStrip')
+      .lean();
 
     if (!request) {
       return res.status(404).json({

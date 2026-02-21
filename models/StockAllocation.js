@@ -48,10 +48,28 @@ const stockAllocationSchema = new mongoose.Schema({
   }
 });
 
-// Index for faster queries
-stockAllocationSchema.index({ dealer: 1, salesman: 1 });
+// Indexes for faster queries
+// Single field indexes
 stockAllocationSchema.index({ salesman: 1 });
 stockAllocationSchema.index({ product: 1 });
+
+// Compound indexes for common query patterns
+// Dealer queries
+stockAllocationSchema.index({ dealer: 1, salesman: 1 });
+stockAllocationSchema.index({ dealer: 1, product: 1 });
+stockAllocationSchema.index({ dealer: 1, product: 1, salesman: 1 });
+
+// Salesman queries
+stockAllocationSchema.index({ salesman: 1, product: 1 });
+stockAllocationSchema.index({ salesman: 1, dealer: 1 });
+
+// Date queries
+stockAllocationSchema.index({ createdAt: -1, dealer: 1 });
+stockAllocationSchema.index({ createdAt: -1, salesman: 1 });
+
+// DealerStock reference queries
+stockAllocationSchema.index({ dealerStock: 1 });
+stockAllocationSchema.index({ dealerStock: 1, salesman: 1 });
 
 module.exports = mongoose.model('StockAllocation', stockAllocationSchema);
 

@@ -50,12 +50,29 @@ const verifyDealer = (req, res, next) => {
 // Get All Salesmen (Dealer can only see salesmen they created)
 router.get('/', verifyToken, verifyDealer, async (req, res) => {
   try {
-    const salesmen = await User.find({ 
+    const { page = 1, limit = 50, search } = req.query;
+    
+    const query = { 
       role: 'salesman',
       createdBy: req.user._id 
-    })
+    };
+    
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+      ];
+    }
+    
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    
+    const salesmen = await User.find(query)
       .select('-password')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await User.countDocuments(query);
 
     res.json({
       success: true,
@@ -68,6 +85,12 @@ router.get('/', verifyToken, verifyDealer, async (req, res) => {
           createdAt: salesman.createdAt,
           updatedAt: salesman.updatedAt,
         })),
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit)),
+        },
       },
     });
   } catch (error) {

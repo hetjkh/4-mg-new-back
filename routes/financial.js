@@ -146,6 +146,7 @@ router.get('/payments', verifyToken, verifyDealerOrAdmin, async (req, res) => {
       })
       .populate('processedBy', 'name email')
       .populate('reconciledBy', 'name email')
+      .lean()
       .sort({ transactionDate: -1, createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -219,7 +220,8 @@ router.get('/payments/:id', verifyToken, verifyDealerOrAdmin, async (req, res) =
         }
       })
       .populate('processedBy', 'name email')
-      .populate('reconciledBy', 'name email');
+      .populate('reconciledBy', 'name email')
+      .lean();
 
     if (!payment) {
       return res.status(404).json({ 
@@ -494,7 +496,7 @@ router.put('/payments/:id/status', verifyToken, verifyAdmin, async (req, res) =>
 // Get outstanding payments dashboard
 router.get('/outstanding', verifyToken, verifyAdmin, async (req, res) => {
   try {
-    const { dealerId } = req.query;
+    const { dealerId, page = 1, limit = 50 } = req.query;
 
     const query = {
       status: { $in: ['pending', 'completed'] },
@@ -504,6 +506,8 @@ router.get('/outstanding', verifyToken, verifyAdmin, async (req, res) => {
     if (dealerId && mongoose.Types.ObjectId.isValid(dealerId)) {
       query.dealer = dealerId;
     }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
 
     // Get all payments that haven't been fully reconciled
     const payments = await Payment.find(query)
@@ -516,7 +520,12 @@ router.get('/outstanding', verifyToken, verifyAdmin, async (req, res) => {
           select: 'title image packetPrice packetsPerStrip'
         }
       })
-      .sort({ transactionDate: -1 });
+      .lean()
+      .sort({ transactionDate: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Payment.countDocuments(query);
 
     // Calculate outstanding amounts per dealer
     const dealerOutstanding = {};
@@ -554,19 +563,28 @@ router.get('/outstanding', verifyToken, verifyAdmin, async (req, res) => {
       });
     });
 
-    const outstandingList = Object.values(dealerOutstanding)
+    let outstandingList = Object.values(dealerOutstanding)
       .filter(item => item.totalOutstanding > 0)
       .sort((a, b) => b.totalOutstanding - a.totalOutstanding);
 
-    // Calculate totals
+    // Calculate totals (before pagination)
     const totalOutstanding = outstandingList.reduce((sum, item) => sum + item.totalOutstanding, 0);
     const totalPending = outstandingList.reduce((sum, item) => sum + item.pendingPayments, 0);
     const totalCompleted = outstandingList.reduce((sum, item) => sum + item.completedPayments, 0);
 
+    // Apply pagination to outstanding list (reuse existing skip variable)
+    const paginatedOutstanding = outstandingList.slice(skip, skip + parseInt(limit));
+
     res.json({
       success: true,
       data: {
-        outstanding: outstandingList,
+        outstanding: paginatedOutstanding,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: outstandingList.length,
+          pages: Math.ceil(outstandingList.length / parseInt(limit)),
+        },
         summary: {
           totalOutstanding,
           totalDealers: outstandingList.length,
@@ -598,7 +616,8 @@ router.put('/payments/:id/reconcile', verifyToken, verifyAdmin, async (req, res)
     }
 
     const payment = await Payment.findById(req.params.id)
-      .populate('dealer', 'name email');
+      .populate('dealer', 'name email')
+      .lean();
 
     if (!payment) {
       return res.status(404).json({ 
@@ -741,6 +760,7 @@ router.get('/upi-transactions', verifyToken, verifyDealerOrAdmin, async (req, re
 
     const payments = await Payment.find(query)
       .populate('dealer', 'name email')
+      .lean()
       .sort({ transactionDate: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -916,6 +936,7 @@ router.get('/refunds', verifyToken, verifyDealerOrAdmin, async (req, res) => {
     const refunds = await Payment.find(query)
       .populate('dealer', 'name email')
       .populate('processedBy', 'name email')
+      .lean()
       .sort({ transactionDate: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -975,6 +996,7 @@ router.get('/credits', verifyToken, verifyAdmin, async (req, res) => {
     const credits = await DealerCredit.find(query)
       .populate('dealer', 'name email')
       .populate('updatedBy', 'name email')
+      .lean()
       .sort({ currentBalance: -1 });
 
     const transformedCredits = credits.map(credit => {
@@ -1144,10 +1166,12 @@ router.put('/credits/:dealerId', verifyToken, verifyAdmin, async (req, res) => {
 // Get payment reminders (Admin only)
 router.get('/reminders', verifyToken, verifyAdmin, async (req, res) => {
   try {
-    const { daysOverdue = 7 } = req.query;
+    const { daysOverdue = 7, page = 1, limit = 50 } = req.query;
 
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - parseInt(daysOverdue));
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
 
     // Find pending payments older than cutoff date
     const pendingPayments = await Payment.find({
@@ -1164,7 +1188,15 @@ router.get('/reminders', verifyToken, verifyAdmin, async (req, res) => {
           select: 'title image packetPrice packetsPerStrip'
         }
       })
-      .sort({ transactionDate: 1 });
+      .sort({ transactionDate: 1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Payment.countDocuments({
+      status: 'pending',
+      type: 'payment',
+      transactionDate: { $lte: cutoffDate },
+    });
 
     const reminders = pendingPayments.map(payment => {
       const paymentObj = payment.toObject ? payment.toObject() : payment;
@@ -1185,6 +1217,12 @@ router.get('/reminders', verifyToken, verifyAdmin, async (req, res) => {
       success: true,
       data: {
         reminders,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit)),
+        },
         summary: {
           total: reminders.length,
           totalAmount: reminders.reduce((sum, r) => sum + r.amount, 0),

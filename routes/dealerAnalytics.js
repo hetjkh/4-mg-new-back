@@ -7,6 +7,7 @@ const Payment = require('../models/Payment');
 const Product = require('../models/Product');
 const User = require('../models/User');
 const { getLanguage } = require('../middleware/translateMessages');
+const { cacheConfigs } = require('../middleware/cacheMiddleware');
 
 const router = express.Router({ mergeParams: true });
 
@@ -68,7 +69,7 @@ const getDateRange = (period) => {
 };
 
 // Get Dealer Sales Performance Metrics
-router.get('/performance', async (req, res) => {
+router.get('/performance', cacheConfigs.dashboard, async (req, res) => {
   try {
     const { period = 'monthly' } = req.query;
     const { startDate, endDate } = getDateRange(period);
@@ -139,7 +140,7 @@ router.get('/performance', async (req, res) => {
 });
 
 // Get Dealer Revenue Trends
-router.get('/revenue-trends', async (req, res) => {
+router.get('/revenue-trends', cacheConfigs.dashboard, async (req, res) => {
   try {
     const { period = 'monthly', groupBy = 'day' } = req.query;
     const { startDate, endDate } = getDateRange(period);
@@ -205,7 +206,7 @@ router.get('/revenue-trends', async (req, res) => {
 });
 
 // Get Top Selling Products for Dealer
-router.get('/top-products', async (req, res) => {
+router.get('/top-products', cacheConfigs.dashboard, async (req, res) => {
   try {
     const { period = 'monthly', limit = 10 } = req.query;
     const { startDate, endDate } = getDateRange(period);
@@ -263,7 +264,7 @@ router.get('/top-products', async (req, res) => {
 });
 
 // Get Salesman Performance Comparison
-router.get('/salesman-performance', async (req, res) => {
+router.get('/salesman-performance', cacheConfigs.dashboard, async (req, res) => {
   try {
     const { period = 'monthly' } = req.query;
     const { startDate, endDate } = getDateRange(period);
@@ -333,7 +334,7 @@ router.get('/salesman-performance', async (req, res) => {
 });
 
 // Get Payment Status Overview
-router.get('/payment-status', async (req, res) => {
+router.get('/payment-status', cacheConfigs.dashboard, async (req, res) => {
   try {
     // Get all requests with payment status
     const requests = await DealerRequest.find({
@@ -401,7 +402,7 @@ router.get('/payment-status', async (req, res) => {
 });
 
 // Get Stock Level Alerts
-router.get('/stock-alerts', async (req, res) => {
+router.get('/stock-alerts', cacheConfigs.dashboard, async (req, res) => {
   try {
     const { threshold = 10 } = req.query; // Default threshold: 10 strips
 

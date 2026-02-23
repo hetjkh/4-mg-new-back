@@ -1648,6 +1648,34 @@ router.get('/bills/pending', verifyToken, verifyDealer, async (req, res) => {
 router.get('/bills/approved', verifyToken, verifyDealer, async (req, res) => {
   try {
     const { page = 1, limit = 50 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    
+    // First, get total count for pagination
+    let total = 0;
+    try {
+      const totalBills = await Sale.aggregate([
+        {
+          $match: {
+            dealer: new mongoose.Types.ObjectId(req.user._id),
+            invoiceNo: { $exists: true, $ne: '' },
+            billStatus: 'approved',
+          },
+        },
+        {
+          $group: {
+            _id: '$invoiceNo',
+          },
+        },
+        {
+          $count: 'total',
+        },
+      ]);
+      
+      total = (totalBills && totalBills.length > 0 && totalBills[0].total) ? parseInt(totalBills[0].total) : 0;
+    } catch (countError) {
+      console.error('Error counting approved bills:', countError);
+      total = 0;
+    }
     
     const bills = await Sale.aggregate([
       {
@@ -1713,6 +1741,12 @@ router.get('/bills/approved', verifyToken, verifyDealer, async (req, res) => {
       },
       {
         $sort: { saleDate: -1 },
+      },
+      {
+        $skip: skip,
+      },
+      {
+        $limit: parseInt(limit),
       },
     ]);
 

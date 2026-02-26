@@ -11,10 +11,13 @@ npm install
 
 2. Create a `.env` file (optional, defaults are set in server.js):
 ```
-MONGODB_URI=mongodb+srv://hetjani818_db_user:123@cluster0.ux8dqnc.mongodb.net/?appName=Cluster0
+MONGODB_URI=mongodb+srv://hetjani818_db_user:123@cluster0.ux8dqnc.mongodb.net/myapp?appName=Cluster0
+ARCHIVE_MONGODB_URI=mongodb+srv://hetjani818_db_user:123@cluster0.6s5idrd.mongodb.net/archive?appName=Cluster0
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
 PORT=3000
 ```
+
+**Note**: The archive database is used for storing historical/archived records. See `ARCHIVE_SETUP.md` for more details.
 
 3. Start the server:
 ```bash

@@ -114,16 +114,24 @@ router.get('/revenue', verifyToken, verifyAdmin, cacheConfigs.revenue, async (re
     const { startDate, endDate } = getDateRange(period);
     const language = getLanguage(req);
 
-    // Get all approved sales (bills) in date range - these are actual sales to shopkeepers
-    const sales = await Sale.find({
+    // Use unified query to search both primary and archive databases
+    const { queryUnifiedSales } = require('../utils/unifiedQuery');
+    const salesQuery = {
       billStatus: 'approved',
       saleDate: { $gte: startDate, $lte: endDate }
-    })
-    .populate('product', 'title packetPrice packetsPerStrip')
-    .populate('dealer', 'name email')
-    .populate('salesman', 'name email')
-    .lean()
-    .sort({ saleDate: 1 });
+    };
+    const result = await queryUnifiedSales(salesQuery, {
+      populate: [
+        { path: 'product', select: 'title packetPrice packetsPerStrip' },
+        { path: 'dealer', select: 'name email' },
+        { path: 'salesman', select: 'name email' },
+      ],
+      sort: { saleDate: 1 },
+      skip: 0,
+      limit: 10000, // Large limit for analytics
+      lean: true,
+    });
+    const sales = result.data;
 
     // Calculate revenue by date
     const revenueByDate = {};
@@ -297,11 +305,20 @@ router.get('/dealers', verifyToken, verifyAdmin, cacheConfigs.dealers, async (re
     if (period !== 'all') {
       salesQuery.saleDate = { $gte: startDate, $lte: endDate };
     }
-    const sales = await Sale.find(salesQuery)
-    .populate('product', 'title packetPrice packetsPerStrip')
-    .populate('dealer', 'name email')
-    .populate('salesman', 'name email')
-    .lean();
+    // Use unified query to search both primary and archive databases
+    const { queryUnifiedSales } = require('../utils/unifiedQuery');
+    const result = await queryUnifiedSales(salesQuery, {
+      populate: [
+        { path: 'product', select: 'title packetPrice packetsPerStrip' },
+        { path: 'dealer', select: 'name email' },
+        { path: 'salesman', select: 'name email' },
+      ],
+      sort: { saleDate: -1 },
+      skip: 0,
+      limit: 10000, // Large limit for analytics
+      lean: true,
+    });
+    const sales = result.data;
 
     // Aggregate by dealer
     const dealerStats = {};

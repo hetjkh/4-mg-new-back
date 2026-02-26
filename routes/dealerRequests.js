@@ -689,7 +689,7 @@ router.put('/:id/approve', verifyToken, verifyAdmin, async (req, res) => {
     }
 
     const request = await DealerRequest.findById(req.params.id)
-      .populate('product', 'title packetPrice initialPacketPrice packetsPerStrip image');
+      .populate('product', 'title packetPrice initialPacketPrice packetsPerStrip image stock');
 
     if (!request) {
       return res.status(404).json({ 
@@ -705,8 +705,25 @@ router.put('/:id/approve', verifyToken, verifyAdmin, async (req, res) => {
       });
     }
 
+    // Validate product and stock
+    if (!request.product) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Product not found for this request' 
+      });
+    }
+
+    // Ensure stock is a valid number
+    const currentStock = Number(request.product.stock);
+    if (isNaN(currentStock) || currentStock < 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid product stock value' 
+      });
+    }
+
     // Check stock availability
-    if (request.product.stock < request.strips) {
+    if (currentStock < request.strips) {
       return res.status(400).json({ 
         success: false, 
         message: 'Insufficient stock to approve this request' 
@@ -728,9 +745,34 @@ router.put('/:id/approve', verifyToken, verifyAdmin, async (req, res) => {
       });
     }
 
-    // Update stock
-    request.product.stock -= request.strips;
-    await request.product.save();
+    // Update stock - ensure we're working with valid numbers
+    // Reload product to get latest stock value
+    const product = await Product.findById(request.product._id);
+    if (!product) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Product not found' 
+      });
+    }
+
+    const productStock = Number(product.stock);
+    if (isNaN(productStock) || productStock < 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid product stock value in database' 
+      });
+    }
+
+    const newStock = productStock - request.strips;
+    if (isNaN(newStock) || newStock < 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Insufficient stock or invalid stock calculation' 
+      });
+    }
+    
+    product.stock = newStock;
+    await product.save();
 
     // Update request
     request.status = 'approved';

@@ -384,17 +384,23 @@ router.get('/', verifyToken, async (req, res) => {
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const sales = await Sale.find(query)
-      .populate('salesman', 'name email')
-      .populate('dealer', 'name email')
-      .populate('product', 'title packetPrice packetsPerStrip image')
-      .populate('shopkeeper', 'name phone email location')
-      .lean()
-      .sort({ saleDate: -1, createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
+    // Use unified query to search both primary and archive databases
+    const { queryUnifiedSales } = require('../utils/unifiedQuery');
+    const result = await queryUnifiedSales(query, {
+      populate: [
+        { path: 'salesman', select: 'name email' },
+        { path: 'dealer', select: 'name email' },
+        { path: 'product', select: 'title packetPrice packetsPerStrip image' },
+        { path: 'shopkeeper', select: 'name phone email location' },
+      ],
+      sort: { saleDate: -1, createdAt: -1 },
+      skip,
+      limit: parseInt(limit),
+      lean: true,
+    });
 
-    const total = await Sale.countDocuments(query);
+    const sales = result.data;
+    const total = result.total;
 
     const language = getLanguage(req);
     const transformedSales = sales.map(sale => {
@@ -863,11 +869,20 @@ router.get('/reports/summary', verifyToken, require('../middleware/cacheMiddlewa
     // This ensures reports show only confirmed sales, not pending bills
     query.billStatus = 'approved';
 
-    // Get sales data
-    const sales = await Sale.find(query)
-      .populate('salesman', 'name email')
-      .populate('product', 'title')
-      .lean();
+    // Use unified query to search both primary and archive databases
+    const { queryUnifiedSales } = require('../utils/unifiedQuery');
+    const result = await queryUnifiedSales(query, {
+      populate: [
+        { path: 'salesman', select: 'name email' },
+        { path: 'product', select: 'title' },
+      ],
+      sort: { saleDate: -1 },
+      skip: 0,
+      limit: 10000, // Large limit for reports
+      lean: true,
+    });
+
+    const sales = result.data;
 
     // Calculate summary
     const totalSales = sales.length;
